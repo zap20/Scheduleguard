@@ -23,9 +23,17 @@ const SCHEDULE_DAYS = [
 ];
 
 /**
- * @param array<string,mixed> $row
- * @return array<string,mixed>
+ * Empty / "TBF" → null (unassigned instructor).
  */
+function normalizeAssignmentFacultyId(mixed $facultyId): ?string
+{
+    $raw = trim((string) ($facultyId ?? ''));
+    if ($raw === '' || strcasecmp($raw, SCHEDULE_INSTRUCTOR_TBF) === 0) {
+        return null;
+    }
+    return $raw;
+}
+
 /**
  * Display label for the instructor assigned to a schedule.
  * Empty / unassigned → TBF (to be filled).
@@ -39,6 +47,10 @@ function scheduleInstructorLabel(?string $facultyId, ?string $firstName, ?string
     return $name !== '' ? $name : SCHEDULE_INSTRUCTOR_TBF;
 }
 
+/**
+ * @param array<string,mixed> $row
+ * @return array<string,mixed>
+ */
 function mapScheduleRow(array $row): array
 {
     $facultyId = isset($row['facultyId']) && $row['facultyId'] !== null
@@ -302,11 +314,11 @@ function fetchFacultyOwnSchedules(string $facultyId): array
 
 /**
  * Dean oversight: teaching schedules for the current term (confirmed + conflict).
- * Optionally filter to one faculty member. When unfiltered, includes TBF rows.
+ * Optionally filter by faculty and/or room. When faculty unfiltered, includes TBF rows.
  *
  * @return list<array<string,mixed>>
  */
-function fetchDeanFacultySchedules(?string $facultyId = null): array
+function fetchDeanFacultySchedules(?string $facultyId = null, ?string $roomId = null): array
 {
     $term = currentTermWindow();
     $sql = scheduleSelectSql() . '
@@ -327,6 +339,11 @@ function fetchDeanFacultySchedules(?string $facultyId = null): array
         }
     }
 
+    if ($roomId !== null && $roomId !== '') {
+        $sql .= ' AND s.roomId = :roomId';
+        $params[':roomId'] = $roomId;
+    }
+
     $sql .= '
         ORDER BY f.lastName ASC, f.firstName ASC,
                  FIELD(s.day, \'Monday\',\'Tuesday\',\'Wednesday\',\'Thursday\',\'Friday\',\'Saturday\',\'Sunday\'),
@@ -337,6 +354,52 @@ function fetchDeanFacultySchedules(?string $facultyId = null): array
     $stmt->execute($params);
 
     return array_map('mapScheduleRow', $stmt->fetchAll());
+}
+
+/**
+ * Existing term meetings used as hard reservations for the optimizer
+ * (room + assigned faculty must not double-book).
+ *
+ * @return list<array{facultyId:string,roomId:string,subjectId:string,day:string,startTime:string,endTime:string}>
+ */
+function fetchTermScheduleReservations(?string $departmentId = null): array
+{
+    $term = currentTermWindow();
+    $sql = 'SELECT s.facultyId, s.roomId, s.subjectId, s.day, s.startTime, s.endTime
+            FROM schedule s
+            WHERE s.academicYear = :academicYear
+              AND s.semester = :semester
+              AND LOWER(s.status) IN (\'confirmed\', \'conflict\')';
+    $params = [
+        ':academicYear' => $term['academicYear'],
+        ':semester' => $term['semester'],
+    ];
+    if ($departmentId !== null && $departmentId !== '') {
+        $sql .= ' AND s.departmentId = :departmentId';
+        $params[':departmentId'] = $departmentId;
+    }
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+
+    $out = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $start = normalizeScheduleTime((string) $row['startTime']);
+        $end = normalizeScheduleTime((string) $row['endTime']);
+        if ($start === null || $end === null) {
+            continue;
+        }
+        $out[] = [
+            'facultyId' => $row['facultyId'] !== null ? (string) $row['facultyId'] : '',
+            'roomId' => (string) $row['roomId'],
+            'subjectId' => (string) $row['subjectId'],
+            'day' => (string) $row['day'],
+            'startTime' => $start,
+            'endTime' => $end,
+        ];
+    }
+
+    return $out;
 }
 
 function normalizeScheduleDay(string $day): ?string
@@ -521,6 +584,95 @@ function assertRoomExists(string $roomId): void
     }
 }
 
+/**
+ * Hard rule: a schedule cannot be created/updated if the room is already
+ * occupied in the same term at an overlapping day/time.
+ */
+function assertRoomAvailableAt(
+    string $roomId,
+    string $day,
+    string $startTime,
+    string $endTime,
+    int $academicYear,
+    string $semester,
+    ?string $excludeScheduleId = null
+): void {
+    $roomId = trim($roomId);
+    if ($roomId === '') {
+        throw new InvalidArgumentException('roomId is required.');
+    }
+
+    $start = normalizeScheduleTime($startTime);
+    $end = normalizeScheduleTime($endTime);
+    if ($start === null || $end === null) {
+        throw new InvalidArgumentException('Invalid startTime/endTime for room availability check.');
+    }
+
+    $sql = 'SELECT s.uid,
+                   sub.code AS subjectCode,
+                   s.day,
+                   s.startTime,
+                   s.endTime,
+                   s.status,
+                   s.blockName,
+                   r.name AS roomName,
+                   r.building AS roomBuilding
+            FROM schedule s
+            INNER JOIN subject sub ON sub.uid = s.subjectId
+            INNER JOIN room r ON r.uid = s.roomId
+            WHERE s.roomId = :roomId
+              AND s.academicYear = :academicYear
+              AND s.semester = :semester
+              AND LOWER(s.day) = LOWER(:day)
+              AND s.startTime < :endTime
+              AND s.endTime > :startTime';
+    $params = [
+        ':roomId' => $roomId,
+        ':academicYear' => $academicYear,
+        ':semester' => $semester,
+        ':day' => $day,
+        ':startTime' => $start . ':00',
+        ':endTime' => $end . ':00',
+    ];
+    if ($excludeScheduleId !== null && $excludeScheduleId !== '') {
+        $sql .= ' AND s.uid <> :excludeUid';
+        $params[':excludeUid'] = $excludeScheduleId;
+    }
+    $sql .= ' ORDER BY s.startTime ASC LIMIT 3';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $hits = $stmt->fetchAll();
+    if ($hits === []) {
+        return;
+    }
+
+    $examples = [];
+    foreach ($hits as $hit) {
+        $block = trim((string) ($hit['blockName'] ?? ''));
+        $examples[] = sprintf(
+            '%s %s–%s (%s%s)',
+            (string) $hit['subjectCode'],
+            substr((string) $hit['startTime'], 0, 5),
+            substr((string) $hit['endTime'], 0, 5),
+            (string) $hit['status'],
+            $block !== '' ? ', ' . $block : ''
+        );
+    }
+
+    $roomLabel = trim((string) ($hits[0]['roomBuilding'] ?? '') . ' / ' . (string) ($hits[0]['roomName'] ?? ''));
+    throw new InvalidArgumentException(
+        sprintf(
+            'Room %s is not available on %s %s–%s. Occupied by: %s. Choose another room or time.',
+            $roomLabel !== '/' ? $roomLabel : $roomId,
+            $day,
+            $start,
+            $end,
+            implode('; ', $examples)
+        )
+    );
+}
+
 function assertDepartmentExistsForSchedule(string $departmentId): void
 {
     $stmt = db()->prepare('SELECT uid FROM department WHERE uid = :uid LIMIT 1');
@@ -534,7 +686,7 @@ function assertDepartmentExistsForSchedule(string $departmentId): void
  * Insert a draft schedule row.
  *
  * @param array{
- *   facultyId:string,
+ *   facultyId:?string,
  *   roomId:string,
  *   departmentId:string,
  *   subjectId:string,
@@ -553,6 +705,15 @@ function assertDepartmentExistsForSchedule(string $departmentId): void
  */
 function createDraftSchedule(array $data, string $createdBy): array
 {
+    assertRoomAvailableAt(
+        (string) $data['roomId'],
+        (string) $data['day'],
+        (string) $data['startTime'],
+        (string) $data['endTime'],
+        (int) $data['academicYear'],
+        (string) $data['semester']
+    );
+
     $uid = generateUid();
     $stmt = db()->prepare(
         'INSERT INTO schedule
@@ -564,7 +725,7 @@ function createDraftSchedule(array $data, string $createdBy): array
     );
     $stmt->execute([
         ':uid' => $uid,
-        ':facultyId' => $data['facultyId'],
+        ':facultyId' => normalizeAssignmentFacultyId($data['facultyId'] ?? null),
         ':roomId' => $data['roomId'],
         ':departmentId' => $data['departmentId'],
         ':createdBy' => $createdBy,
@@ -598,6 +759,16 @@ function createDraftSchedule(array $data, string $createdBy): array
  */
 function updateScheduleFields(string $scheduleId, array $data): array
 {
+    assertRoomAvailableAt(
+        (string) $data['roomId'],
+        (string) $data['day'],
+        (string) $data['startTime'],
+        (string) $data['endTime'],
+        (int) $data['academicYear'],
+        (string) $data['semester'],
+        $scheduleId
+    );
+
     $stmt = db()->prepare(
         'UPDATE schedule
          SET facultyId = :facultyId,
@@ -613,7 +784,7 @@ function updateScheduleFields(string $scheduleId, array $data): array
          WHERE uid = :uid'
     );
     $stmt->execute([
-        ':facultyId' => $data['facultyId'],
+        ':facultyId' => normalizeAssignmentFacultyId($data['facultyId'] ?? null),
         ':roomId' => $data['roomId'],
         ':departmentId' => $data['departmentId'],
         ':subjectId' => $data['subjectId'],

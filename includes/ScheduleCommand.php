@@ -521,7 +521,8 @@ function saveGeneratedScheduleOption(
                 throw new InvalidArgumentException('Invalid time in selected option.');
             }
             $data = [
-                'facultyId' => (string) $assignment['facultyId'],
+                // AI never assigns instructors — Dean picks faculty per subject later.
+                'facultyId' => null,
                 'roomId' => (string) $assignment['roomId'],
                 'departmentId' => $departmentId,
                 'subjectId' => (string) $assignment['subjectId'],
@@ -606,7 +607,7 @@ function generateScheduleCommandPlans(array $baseInput, array $parsed, int $plan
 
     $plans = [];
     for ($p = 0; $p < $planCount; $p++) {
-        $reserved = [];
+        $reserved = array_values($baseInput['reservedAssignments'] ?? []);
         $blocks = [];
         $scores = [];
         $failed = false;

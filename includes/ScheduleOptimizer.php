@@ -15,6 +15,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/Subject.php';
+require_once __DIR__ . '/Schedule.php';
 
 const OPTIMIZER_DAYS = [
     'Monday',
@@ -106,9 +107,7 @@ function generateScheduleOptions(array $input): array
     if ($subjects === []) {
         throw new InvalidArgumentException('At least one subject is required.');
     }
-    if ($faculty === []) {
-        throw new InvalidArgumentException('At least one faculty member is required.');
-    }
+    // Faculty may be empty — subjects then schedule as TBF (unassigned instructor).
     if ($rooms === []) {
         throw new InvalidArgumentException('At least one room is required.');
     }
@@ -278,14 +277,17 @@ function generateScheduleOptions(array $input): array
         foreach ($item['chromosome'] as $gene) {
             $subject = optimizerFindByUid($subjects, (string) $gene['subjectId']);
             $room = optimizerFindByUid($rooms, (string) $gene['roomId']);
-            $fac = optimizerFindByUid($faculty, (string) $gene['facultyId']);
+            $facultyId = optimizerFacultyId($gene['facultyId'] ?? '');
+            $fac = $facultyId !== '' ? optimizerFindByUid($faculty, $facultyId) : null;
             $assignments[] = [
                 'subjectId' => (string) $gene['subjectId'],
                 'subjectCode' => (string) ($subject['code'] ?? ''),
                 'subjectTitle' => (string) ($subject['title'] ?? ''),
                 'units' => isset($subject['units']) ? (float) $subject['units'] : null,
-                'facultyId' => (string) $gene['facultyId'],
-                'facultyName' => (string) ($fac['fullName'] ?? $fac['name'] ?? ''),
+                'facultyId' => $facultyId,
+                'facultyName' => $facultyId !== ''
+                    ? (string) ($fac['fullName'] ?? $fac['name'] ?? '')
+                    : 'TBF',
                 'roomId' => (string) $gene['roomId'],
                 'roomLabel' => (string) ($room['label'] ?? (($room['building'] ?? '') . ' / ' . ($room['name'] ?? ''))),
                 'roomCapacity' => isset($room['capacity']) ? (int) $room['capacity'] : null,
@@ -417,6 +419,7 @@ function buildScheduleOptimizerInputFromDb(
         'blocks' => $blocks,
         'expectedHeadcount' => $expectedHeadcount,
         'optionCount' => $optionCount,
+        'reservedAssignments' => fetchTermScheduleReservations($departmentId),
     ];
 }
 
@@ -487,6 +490,18 @@ function optimizerRandomChromosome(
     $usedSlots = [];
     foreach ($subjects as $subject) {
         $usableRooms = optimizerRoomsForSubject($rooms, $subject, $expectedHeadcount);
+        if ($usableRooms === []) {
+            $fallbackSlot = $slotCatalog[0];
+            $chrome[] = [
+                'subjectId' => (string) $subject['uid'],
+                'facultyId' => '',
+                'roomId' => '',
+                'day' => (string) $fallbackSlot['day'],
+                'startTime' => (string) $fallbackSlot['startTime'],
+                'endTime' => (string) $fallbackSlot['endTime'],
+            ];
+            continue;
+        }
         $picked = null;
         for ($attempts = 0; $attempts < 60; $attempts++) {
             $slot = $slotCatalog[mt_rand(0, count($slotCatalog) - 1)];
@@ -494,34 +509,76 @@ function optimizerRandomChromosome(
             if (isset($usedSlots[$key])) {
                 continue;
             }
-            $fac = $faculty[mt_rand(0, count($faculty) - 1)];
             $room = $usableRooms[mt_rand(0, count($usableRooms) - 1)];
-            $gene = [
+            $probe = [
+                'day' => (string) $slot['day'],
+                'startTime' => (string) $slot['startTime'],
+                'endTime' => (string) $slot['endTime'],
+                'roomId' => (string) $room['uid'],
+                'facultyId' => '', // Dean assigns instructor later (TBF)
+            ];
+            // Room must be free vs reserved + in-progress chromosome.
+            if (optimizerRoomBusyAt((string) $room['uid'], $probe, $chrome, $reserved, null)) {
+                continue;
+            }
+            if (optimizerConflictsWithReserved($probe, $reserved)) {
+                continue;
+            }
+            $picked = [
                 'subjectId' => (string) $subject['uid'],
-                'facultyId' => (string) $fac['uid'],
+                'facultyId' => '',
                 'roomId' => (string) $room['uid'],
                 'day' => (string) $slot['day'],
                 'startTime' => (string) $slot['startTime'],
                 'endTime' => (string) $slot['endTime'],
             ];
-            if (optimizerConflictsWithReserved($gene, $reserved)) {
-                continue;
-            }
-            $picked = $gene;
             $usedSlots[$key] = true;
             break;
         }
         if ($picked === null) {
-            $slot = $slotCatalog[mt_rand(0, count($slotCatalog) - 1)];
-            $fac = $faculty[mt_rand(0, count($faculty) - 1)];
-            $room = $usableRooms[mt_rand(0, count($usableRooms) - 1)];
+            // Exhaustive search: only place when a free room exists.
+            foreach ($slotCatalog as $slot) {
+                $key = $slot['day'] . '|' . $slot['startTime'];
+                if (isset($usedSlots[$key])) {
+                    continue;
+                }
+                foreach ($usableRooms as $room) {
+                    $probe = [
+                        'day' => (string) $slot['day'],
+                        'startTime' => (string) $slot['startTime'],
+                        'endTime' => (string) $slot['endTime'],
+                        'roomId' => (string) $room['uid'],
+                        'facultyId' => '',
+                    ];
+                    if (optimizerRoomBusyAt((string) $room['uid'], $probe, $chrome, $reserved, null)) {
+                        continue;
+                    }
+                    if (optimizerConflictsWithReserved($probe, $reserved)) {
+                        continue;
+                    }
+                    $picked = [
+                        'subjectId' => (string) $subject['uid'],
+                        'facultyId' => '',
+                        'roomId' => (string) $room['uid'],
+                        'day' => (string) $slot['day'],
+                        'startTime' => (string) $slot['startTime'],
+                        'endTime' => (string) $slot['endTime'],
+                    ];
+                    $usedSlots[$key] = true;
+                    break 2;
+                }
+            }
+        }
+        if ($picked === null) {
+            // No available room for this subject — mark invalid (fails conflictFree).
+            $fallbackSlot = $slotCatalog[0];
             $picked = [
                 'subjectId' => (string) $subject['uid'],
-                'facultyId' => (string) $fac['uid'],
-                'roomId' => (string) $room['uid'],
-                'day' => (string) $slot['day'],
-                'startTime' => (string) $slot['startTime'],
-                'endTime' => (string) $slot['endTime'],
+                'facultyId' => '',
+                'roomId' => '',
+                'day' => (string) $fallbackSlot['day'],
+                'startTime' => (string) $fallbackSlot['startTime'],
+                'endTime' => (string) $fallbackSlot['endTime'],
             ];
         }
         $chrome[] = $picked;
@@ -599,17 +656,34 @@ function optimizerMutate(
     }
 
     $idx = mt_rand(0, count($chrome) - 1);
-    $kind = mt_rand(0, 2);
-    if ($kind === 0) {
+    if (mt_rand(0, 1) === 0) {
         $slot = $slotCatalog[mt_rand(0, count($slotCatalog) - 1)];
         $chrome[$idx]['day'] = $slot['day'];
         $chrome[$idx]['startTime'] = $slot['startTime'];
         $chrome[$idx]['endTime'] = $slot['endTime'];
-    } elseif ($kind === 1) {
-        $chrome[$idx]['facultyId'] = (string) $faculty[mt_rand(0, count($faculty) - 1)]['uid'];
-    } else {
-        $chrome[$idx]['roomId'] = (string) $usableRooms[mt_rand(0, count($usableRooms) - 1)]['uid'];
     }
+
+    // Always re-pick a free room for the (possibly new) slot; else unplaceable.
+    $freeRooms = [];
+    foreach ($usableRooms as $room) {
+        $probe = [
+            'day' => (string) $chrome[$idx]['day'],
+            'startTime' => (string) $chrome[$idx]['startTime'],
+            'endTime' => (string) $chrome[$idx]['endTime'],
+            'roomId' => (string) $room['uid'],
+            'facultyId' => '',
+        ];
+        if (!optimizerRoomBusyAt((string) $room['uid'], $probe, $chrome, $reserved, $idx)
+            && !optimizerConflictsWithReserved($probe, $reserved)
+        ) {
+            $freeRooms[] = $room;
+        }
+    }
+    $chrome[$idx]['roomId'] = $freeRooms === []
+        ? ''
+        : (string) $freeRooms[mt_rand(0, count($freeRooms) - 1)]['uid'];
+    // Instructor stays TBF — Dean assigns subject → faculty later.
+    $chrome[$idx]['facultyId'] = '';
     return $chrome;
 }
 
@@ -648,29 +722,37 @@ function optimizerRepair(
         }
         foreach ($eval['conflictIndexes'] as $idx) {
             foreach ($slotCatalog as $slot) {
-                foreach ($faculty as $fac) {
-                    foreach ($usableRooms as $room) {
-                        $trial = $chrome;
-                        $trial[$idx] = [
-                            'subjectId' => $chrome[$idx]['subjectId'],
-                            'facultyId' => (string) $fac['uid'],
-                            'roomId' => (string) $room['uid'],
-                            'day' => (string) $slot['day'],
-                            'startTime' => (string) $slot['startTime'],
-                            'endTime' => (string) $slot['endTime'],
-                        ];
-                        $trialEval = optimizerEvaluate(
-                            $trial,
-                            $subjects,
-                            $faculty,
-                            $rooms,
-                            $expectedHeadcount,
-                            $reserved
-                        );
-                        if (count($trialEval['conflictIndexes']) < count($eval['conflictIndexes'])) {
-                            $chrome = $trial;
-                            break 3;
-                        }
+                foreach ($usableRooms as $room) {
+                    $trial = $chrome;
+                    $candidate = [
+                        'subjectId' => $chrome[$idx]['subjectId'],
+                        'facultyId' => '', // Dean assigns later
+                        'roomId' => (string) $room['uid'],
+                        'day' => (string) $slot['day'],
+                        'startTime' => (string) $slot['startTime'],
+                        'endTime' => (string) $slot['endTime'],
+                    ];
+                    if (optimizerRoomBusyAt(
+                        $candidate['roomId'],
+                        $candidate,
+                        $trial,
+                        $reserved,
+                        $idx
+                    )) {
+                        continue;
+                    }
+                    $trial[$idx] = $candidate;
+                    $trialEval = optimizerEvaluate(
+                        $trial,
+                        $subjects,
+                        $faculty,
+                        $rooms,
+                        $expectedHeadcount,
+                        $reserved
+                    );
+                    if (count($trialEval['conflictIndexes']) < count($eval['conflictIndexes'])) {
+                        $chrome = $trial;
+                        break 2;
                     }
                 }
             }
@@ -689,10 +771,8 @@ function optimizerConflictsWithReserved(array $gene, array $reserved): bool
         if (!optimizerTimesOverlap($gene, $other)) {
             continue;
         }
-        if (
-            (string) ($gene['roomId'] ?? '') === (string) ($other['roomId'] ?? '')
-            || (string) ($gene['facultyId'] ?? '') === (string) ($other['facultyId'] ?? '')
-        ) {
+        $sameRoom = (string) ($gene['roomId'] ?? '') === (string) ($other['roomId'] ?? '');
+        if ($sameRoom || optimizerSameFaculty($gene, $other)) {
             return true;
         }
     }
@@ -729,12 +809,16 @@ function optimizerEvaluate(
             if (!optimizerTimesOverlap($chrome[$i], $chrome[$j])) {
                 continue;
             }
-            $sameRoom = $chrome[$i]['roomId'] === $chrome[$j]['roomId'];
-            $sameFac = $chrome[$i]['facultyId'] === $chrome[$j]['facultyId'];
+            $sameRoom = $chrome[$i]['roomId'] === $chrome[$j]['roomId']
+                && trim((string) $chrome[$i]['roomId']) !== '';
+            $sameFac = optimizerSameFaculty($chrome[$i], $chrome[$j]);
             if ($sameRoom || $sameFac) {
                 $conflictIndexes[$i] = $i;
                 $conflictIndexes[$j] = $j;
             }
+        }
+        if (trim((string) ($chrome[$i]['roomId'] ?? '')) === '') {
+            $conflictIndexes[$i] = $i;
         }
         if (optimizerConflictsWithReserved($chrome[$i], $reserved)) {
             $conflictIndexes[$i] = $i;
@@ -763,7 +847,10 @@ function optimizerEvaluate(
         $loads[(string) $fac['uid']] = 0;
     }
     foreach ($chrome as $gene) {
-        $fid = (string) $gene['facultyId'];
+        $fid = optimizerFacultyId($gene['facultyId'] ?? '');
+        if ($fid === '') {
+            continue;
+        }
         $loads[$fid] = ($loads[$fid] ?? 0) + 1;
     }
     $loadValues = array_values($loads);
@@ -817,6 +904,132 @@ function optimizerEvaluate(
         'conflictFree' => $conflictFree,
         'conflictIndexes' => $conflictIndexes,
     ];
+}
+
+/**
+ * Normalize faculty id; empty string means TBF (unassigned).
+ */
+function optimizerFacultyId(mixed $value): string
+{
+    $raw = trim((string) ($value ?? ''));
+    if ($raw === '' || strcasecmp($raw, 'TBF') === 0) {
+        return '';
+    }
+    return $raw;
+}
+
+/**
+ * Two meetings share a real instructor (TBF never conflicts with TBF/faculty).
+ */
+function optimizerSameFaculty(array $a, array $b): bool
+{
+    $fa = optimizerFacultyId($a['facultyId'] ?? '');
+    $fb = optimizerFacultyId($b['facultyId'] ?? '');
+    return $fa !== '' && $fa === $fb;
+}
+
+/**
+ * @param list<array<string,mixed>> $chrome
+ * @param list<array<string,mixed>> $reserved
+ */
+function optimizerFacultyBusyAt(
+    string $facultyId,
+    array $probe,
+    array $chrome,
+    array $reserved,
+    ?int $skipIndex
+): bool {
+    $facultyId = optimizerFacultyId($facultyId);
+    if ($facultyId === '') {
+        return false;
+    }
+    foreach ($chrome as $i => $other) {
+        if ($skipIndex !== null && $i === $skipIndex) {
+            continue;
+        }
+        if (!optimizerTimesOverlap($probe, $other)) {
+            continue;
+        }
+        if (optimizerFacultyId($other['facultyId'] ?? '') === $facultyId) {
+            return true;
+        }
+    }
+    foreach ($reserved as $other) {
+        if (!optimizerTimesOverlap($probe, $other)) {
+            continue;
+        }
+        if (optimizerFacultyId($other['facultyId'] ?? '') === $facultyId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @param list<array<string,mixed>> $chrome
+ * @param list<array<string,mixed>> $reserved
+ */
+function optimizerRoomBusyAt(
+    string $roomId,
+    array $probe,
+    array $chrome,
+    array $reserved,
+    ?int $skipIndex
+): bool {
+    $roomId = trim($roomId);
+    if ($roomId === '') {
+        return false;
+    }
+    foreach ($chrome as $i => $other) {
+        if ($skipIndex !== null && $i === $skipIndex) {
+            continue;
+        }
+        if (!optimizerTimesOverlap($probe, $other)) {
+            continue;
+        }
+        if ((string) ($other['roomId'] ?? '') === $roomId) {
+            return true;
+        }
+    }
+    foreach ($reserved as $other) {
+        if (!optimizerTimesOverlap($probe, $other)) {
+            continue;
+        }
+        if ((string) ($other['roomId'] ?? '') === $roomId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Prefer a free instructor for this subject slot; otherwise TBF (empty).
+ *
+ * @param list<array<string,mixed>> $faculty
+ * @param list<array<string,mixed>> $chrome
+ * @param list<array<string,mixed>> $reserved
+ */
+function optimizerPickFacultyForSlot(
+    array $faculty,
+    array $probe,
+    array $chrome,
+    array $reserved,
+    ?int $skipIndex
+): string {
+    $free = [];
+    foreach ($faculty as $fac) {
+        $uid = optimizerFacultyId($fac['uid'] ?? '');
+        if ($uid === '') {
+            continue;
+        }
+        if (!optimizerFacultyBusyAt($uid, $probe, $chrome, $reserved, $skipIndex)) {
+            $free[] = $uid;
+        }
+    }
+    if ($free === []) {
+        return ''; // TBF — to be followed / assigned later
+    }
+    return $free[mt_rand(0, count($free) - 1)];
 }
 
 /**

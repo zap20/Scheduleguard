@@ -57,9 +57,6 @@ try {
             422
         );
     }
-    if ($input['faculty'] === []) {
-        jsonError('No active faculty available for scheduling.', 422);
-    }
     if ($input['rooms'] === []) {
         jsonError('No rooms available for scheduling.', 422);
     }
@@ -67,7 +64,8 @@ try {
     $plans = generateScheduleCommandPlans($input, $parsed, $planCount);
     if ($plans === []) {
         jsonError(
-            'Could not build conflict-free plans for the requested block count / day range. Try fewer blocks or more days.',
+            'Could not build plans: no free rooms for the requested subjects/blocks/days. '
+            . 'Add rooms, free existing bookings, use more weekdays, or fewer blocks.',
             422
         );
     }

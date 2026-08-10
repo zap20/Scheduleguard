@@ -189,7 +189,8 @@
       grid.innerHTML = window.renderScheduleGrid(
         rows.map(function (row) {
           const parts = [row.subjectCode, instructorLabel(row)];
-          if (row.roomLabel) parts.push(row.roomLabel);
+          const room = (row.roomName || row.roomLabel || "").trim();
+          if (room) parts.push(room);
           return {
             day: row.day,
             startTime: row.startTime,
@@ -255,6 +256,8 @@
     return rows.map(function (row) {
       const parts = [row.subjectCode, instructorLabel(row)];
       if (row.blockName) parts.push(row.blockName);
+      const room = (row.roomName || row.roomLabel || "").trim();
+      if (room) parts.push(room);
       return {
         day: row.day,
         startTime: row.startTime,

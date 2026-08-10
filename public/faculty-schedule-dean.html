@@ -32,37 +32,50 @@
           <div>
             <h2>Faculty timetable</h2>
             <p class="panel-sub">
-              Teaching assignments for the current term — subject code, instructor
-              (<strong>TBF</strong> when unset), and block.
+              Browse by <strong>room</strong> or <strong>faculty</strong> cards. Click a card to open
+              that weekly grid. AI meetings start as <strong>TBF</strong> until assigned.
             </p>
           </div>
           <span class="term-chip" id="term-chip">…</span>
           <div class="count-chip"><span id="result-count">0</span> rows</div>
         </div>
 
-        <form id="filter-form" class="filter-bar">
-          <label>
-            Faculty
-            <select id="filter-facultyId" name="facultyId">
-              <option value="">All faculty</option>
-              <option value="TBF">TBF (unassigned)</option>
-            </select>
-          </label>
-          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
-        </form>
+        <div class="module-tabs" role="tablist" aria-label="Browse by" style="margin-bottom: 1rem">
+          <button type="button" class="module-tab is-active" data-browse="room" role="tab">
+            By room
+          </button>
+          <button type="button" class="module-tab" data-browse="faculty" role="tab">
+            By faculty
+          </button>
+        </div>
 
         <div id="schedule-alert" class="alert alert-error" role="alert"></div>
-        <div id="schedule-grid"></div>
-        <p id="schedule-empty" class="empty-state" hidden>
-          No faculty schedules for this filter.
-        </p>
+
+        <div id="cards-view">
+          <div id="schedule-cards" class="schedule-card-grid"></div>
+          <p id="cards-empty" class="empty-state" hidden>No schedules to browse for this term.</p>
+        </div>
+
+        <div id="detail-view" hidden>
+          <div class="panel-head" style="margin-bottom: 0.75rem">
+            <div>
+              <button type="button" class="btn btn-secondary" id="back-to-cards" style="width: auto; min-width: 0; margin-bottom: 0.65rem">
+                ← Back to cards
+              </button>
+              <h3 id="detail-title" style="margin: 0">Weekly grid</h3>
+              <p id="detail-sub" class="panel-sub" style="margin: 0.25rem 0 0"></p>
+            </div>
+          </div>
+          <div id="schedule-grid"></div>
+          <p id="schedule-empty" class="empty-state" hidden>No meetings for this selection.</p>
+        </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="list-panel" hidden>
         <div class="panel-head">
           <div>
-            <h2>Teaching load list</h2>
-            <p class="panel-sub">Same rows in list form.</p>
+            <h2>Meeting list</h2>
+            <p class="panel-sub">Rows for the selected card.</p>
           </div>
         </div>
         <div class="table-wrap">

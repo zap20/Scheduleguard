@@ -45,13 +45,17 @@ try {
     if ($input['subjects'] === []) {
         jsonError('No active curriculum subjects found for that year level and semester.', 422);
     }
-    if ($input['faculty'] === []) {
-        jsonError('No active faculty available for scheduling.', 422);
-    }
     if ($input['rooms'] === []) {
-        jsonError('No rooms available for scheduling.', 422);
+        jsonError('No rooms available for scheduling. Add rooms before generating.', 422);
     }
     $result = generateScheduleOptions($input);
+    if (($result['options'] ?? []) === []) {
+        jsonError(
+            'No conflict-free options: not enough free rooms for those subjects/days. '
+            . 'Free rooms or widen the day range.',
+            422
+        );
+    }
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);
 }

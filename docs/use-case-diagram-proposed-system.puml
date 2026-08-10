@@ -1,0 +1,133 @@
+@startuml ScheduleGuard_UseCase_Proposed_System
+!theme plain
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #F7FBFC
+  BorderColor #0B6E6E
+}
+skinparam actor {
+  BackgroundColor #FFFFFF
+  BorderColor #10233F
+}
+skinparam rectangle {
+  BorderColor #10233F
+}
+
+title Use Case Diagram – ScheduleGuard (Proposed System)
+
+left to right direction
+
+actor "Dean" as Dean
+actor "Program Head" as PH
+actor "Faculty" as Faculty
+actor "Student" as Student
+actor "HR" as HR
+
+rectangle "ScheduleGuard (Proposed System)" {
+  usecase "Log in" as UC_Login
+  usecase "Log out" as UC_Logout
+  usecase "View dashboard" as UC_Dashboard
+
+  usecase "Manage curriculum / subjects" as UC_Curriculum
+  usecase "Manage rooms\n(LAB / LECTURE)" as UC_Rooms
+
+  usecase "Create class blocks\n(manual)" as UC_CreateBlock
+  usecase "Create class blocks\nwith AI command" as UC_AIBlocks
+  usecase "View student schedule /\nclass-block timetable" as UC_StudentSched
+  usecase "View faculty schedule /\nteaching load" as UC_FacultySched
+  usecase "Confirm or resolve\nschedule conflicts" as UC_Conflicts
+  usecase "Assign instructor or\nleave as TBF" as UC_TBF
+
+  usecase "Enroll / clear students" as UC_Enroll
+  usecase "Assign students to\nclass blocks" as UC_AssignBlock
+  usecase "Distribute enrollment\nto schedules" as UC_Distribute
+
+  usecase "View own teaching\nschedule" as UC_FacOwn
+  usecase "Record / view\nown attendance" as UC_FacAtt
+
+  usecase "View own distributed\nschedule" as UC_StuOwn
+  usecase "View blocking status" as UC_StuBlock
+
+  usecase "Attendance oversight" as UC_DeanAtt
+  usecase "Review attendance" as UC_HRAtt
+  usecase "Manage student blocking" as UC_Blocking
+
+  usecase "Manage users" as UC_Users
+  usecase "View audit trail" as UC_Audit
+}
+
+' Authentication
+Dean --> UC_Login
+PH --> UC_Login
+Faculty --> UC_Login
+Student --> UC_Login
+HR --> UC_Login
+
+Dean --> UC_Logout
+PH --> UC_Logout
+Faculty --> UC_Logout
+Student --> UC_Logout
+HR --> UC_Logout
+
+Dean --> UC_Dashboard
+PH --> UC_Dashboard
+Faculty --> UC_Dashboard
+Student --> UC_Dashboard
+HR --> UC_Dashboard
+
+' Dean
+Dean --> UC_Curriculum
+Dean --> UC_Rooms
+Dean --> UC_CreateBlock
+Dean --> UC_AIBlocks
+Dean --> UC_StudentSched
+Dean --> UC_FacultySched
+Dean --> UC_Conflicts
+Dean --> UC_TBF
+Dean --> UC_DeanAtt
+Dean --> UC_Blocking
+Dean --> UC_Users
+Dean --> UC_Audit
+
+' Program Head
+PH --> UC_Curriculum
+PH --> UC_Enroll
+PH --> UC_AssignBlock
+PH --> UC_Distribute
+PH --> UC_Blocking
+
+' Faculty
+Faculty --> UC_FacOwn
+Faculty --> UC_FacAtt
+
+' Student
+Student --> UC_StuOwn
+Student --> UC_StuBlock
+
+' HR
+HR --> UC_HRAtt
+HR --> UC_Blocking
+
+' Relationships
+UC_AIBlocks ..> UC_CreateBlock : <<extend>>
+UC_AssignBlock ..> UC_Enroll : <<include>>
+UC_Distribute ..> UC_AssignBlock : <<include>>
+UC_StudentSched ..> UC_Login : <<include>>
+UC_FacultySched ..> UC_Login : <<include>>
+UC_FacOwn ..> UC_Login : <<include>>
+UC_StuOwn ..> UC_Login : <<include>>
+
+note right of UC_AIBlocks
+  Parse command →
+  generate ranked plans →
+  save selected plan
+end note
+
+note bottom of UC_TBF
+  Instructor may be empty (TBF)
+  until assigned
+end note
+
+@enduml

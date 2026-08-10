@@ -99,6 +99,75 @@
   font-size: 0.9rem;
 }
 
+.schedule-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.schedule-pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 1.05rem 0.95rem;
+  border: 1px solid rgba(16, 35, 63, 0.12);
+  border-radius: 14px;
+  background: linear-gradient(165deg, #ffffff 0%, #f7fbfb 100%);
+  color: #10233f;
+  cursor: pointer;
+  font: inherit;
+  box-shadow: 0 8px 20px rgba(16, 35, 63, 0.06);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.schedule-pick-card:hover,
+.schedule-pick-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(11, 110, 110, 0.45);
+  box-shadow: 0 14px 28px rgba(16, 35, 63, 0.1);
+  outline: none;
+}
+
+.schedule-pick-card__eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3a4d68;
+}
+
+.schedule-pick-card__title {
+  font-family: "Libre Baskerville", Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.schedule-pick-card__stat {
+  font-size: 0.88rem;
+  color: #3a4d68;
+}
+
+.schedule-pick-card__cta {
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0b6e6e;
+}
+
+.room-grid-section {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(16, 35, 63, 0.08);
+}
+
+.room-grid-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 /* Match faculty timetable panel width inside View schedule */
 .modal-card.modal-schedule {
   width: min(1120px, calc(100vw - 2rem));

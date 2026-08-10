@@ -31,7 +31,9 @@ INSERT INTO room (uid, name, building, capacity, roomType, createdAt) VALUES
 ('room-lab101', 'Lab 101', 'Main Building', 40, 'LAB', NOW()),
 ('room-205', 'Room 205', 'Annex', 35, 'LECTURE', NOW()),
 ('room-lab201', 'Lab 201', 'Main Building', 30, 'LAB', NOW()),
-('room-301', 'Room 301', 'Annex', 45, 'LECTURE', NOW());
+('room-301', 'Room 301', 'Annex', 45, 'LECTURE', NOW()),
+('room-206', 'Room 206', 'Annex', 40, 'LECTURE', NOW()),
+('room-207', 'Room 207', 'Annex', 40, 'LECTURE', NOW());
 
 -- Users (1 per role + Checker)
 -- schoolId format: YYYY-NNN (e.g. 2020-001)

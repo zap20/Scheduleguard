@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Dean view of confirmed faculty teaching schedules (same data faculty see).
+ * Dean view of faculty teaching schedules (confirmed + conflict).
+ * Filters: facultyId (or TBF), roomId.
  */
 
 require_once dirname(__DIR__, 2) . '/includes/bootstrap.php';
@@ -16,8 +17,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 requireRoles(['Dean']);
 
 $facultyId = isset($_GET['facultyId']) ? trim((string) $_GET['facultyId']) : '';
+$roomId = isset($_GET['roomId']) ? trim((string) $_GET['roomId']) : '';
 
 jsonSuccess([
     'term' => currentTermWindow(),
-    'schedules' => fetchDeanFacultySchedules($facultyId !== '' ? $facultyId : null),
+    'schedules' => fetchDeanFacultySchedules(
+        $facultyId !== '' ? $facultyId : null,
+        $roomId !== '' ? $roomId : null
+    ),
 ]);
