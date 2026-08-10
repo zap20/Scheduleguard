@@ -1,0 +1,3 @@
+facultyId,roomId,departmentId,subjectCode,subjectName,day,startTime,endTime,academicYear,semester
+user-faculty,room-lab101,dept-comp,CS201,Data Structures,Tuesday,13:00,14:30,2025,1
+user-faculty,room-205,dept-comp,IT310,Software Engineering,Thursday,09:00,10:30,2025,1

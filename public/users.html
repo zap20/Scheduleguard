@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Management — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">User &amp; role management · <span id="user-label">…</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Users</h2>
+            <p class="panel-sub">
+              Create and edit accounts, change roles (effective on the user’s next request),
+              and soft-deactivate without deleting history.
+            </p>
+          </div>
+          <div class="panel-head-actions">
+            <div class="count-chip"><span id="result-count">0</span> total</div>
+            <button id="create-btn" class="btn" type="button" style="width: auto; min-width: 130px">
+              Create user
+            </button>
+          </div>
+        </div>
+
+        <form id="filter-form" class="filter-bar">
+          <label class="grow">
+            Search
+            <input id="q" name="q" type="search" placeholder="Name, email, or ID (2020-001)" />
+          </label>
+          <label>
+            Role
+            <select id="role" name="role">
+              <option value="">All roles</option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select id="status" name="status">
+              <option value="">All statuses</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="users-alert" class="alert alert-error" role="alert"></div>
+        <div id="users-success" class="alert alert-success" role="status"></div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-body"></tbody>
+          </table>
+          <p id="users-empty" class="empty-state" hidden>No users match these filters.</p>
+        </div>
+
+        <div class="pagination">
+          <button id="prev-page" class="btn btn-secondary" type="button" style="width: auto">Previous</button>
+          <span id="page-label" class="page-label">Page 1</span>
+          <button id="next-page" class="btn btn-secondary" type="button" style="width: auto">Next</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="user-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="user-modal-title" style="width: min(520px, 100%)">
+        <h3 id="user-modal-title">Create user</h3>
+        <p id="user-modal-sub" class="panel-sub">Password is required for new accounts.</p>
+        <form id="user-form" class="stack-form">
+          <input type="hidden" id="form-uid" name="uid" />
+          <div class="form-row">
+            <label>
+              First name
+              <input id="form-firstName" name="firstName" type="text" required maxlength="100" />
+            </label>
+            <label>
+              Last name
+              <input id="form-lastName" name="lastName" type="text" required maxlength="100" />
+            </label>
+            <label>
+              Role
+              <select id="form-role" name="role" required></select>
+            </label>
+          </div>
+          <label>
+            School ID
+            <input
+              id="form-schoolId"
+              name="schoolId"
+              type="text"
+              required
+              maxlength="20"
+              pattern="\d{4}-\d{3}"
+              placeholder="2020-001"
+              title="Format: YYYY-NNN (e.g. 2020-001). Same ID is allowed for Student and Faculty."
+            />
+          </label>
+          <label>
+            Email
+            <input id="form-email" name="email" type="email" required maxlength="191" />
+          </label>
+          <div class="form-row">
+            <label>
+              Department
+              <select id="form-departmentId" name="departmentId">
+                <option value="">None</option>
+              </select>
+            </label>
+            <label>
+              Phone
+              <input id="form-phoneNumber" name="phoneNumber" type="text" maxlength="30" />
+            </label>
+            <label>
+              Status
+              <select id="form-status" name="status">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Password <span id="password-hint">(required)</span>
+            <input id="form-password" name="password" type="password" minlength="8" autocomplete="new-password" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="user-cancel" style="width: auto">Cancel</button>
+            <button type="submit" class="btn" id="user-submit" style="width: auto; min-width: 120px">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/users.js"></script>
+  </body>
+</html>

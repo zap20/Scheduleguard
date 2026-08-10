@@ -1,0 +1,8 @@
+Options -Indexes
+
+# Deny direct web access to non-public application internals when the
+# project root is inside the Apache document root.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(config|includes|database)/ - [F,L]
+</IfModule>

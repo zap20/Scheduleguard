@@ -1,0 +1,108 @@
+/* Reusable weekly schedule grid */
+
+.schedule-grid-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(16, 35, 63, 0.12);
+  border-radius: 14px;
+  background: #fff;
+  zoom: 0.5;
+}
+
+.schedule-grid {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: "Figtree", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+}
+
+.schedule-grid th,
+.schedule-grid td {
+  border: 1px solid rgba(16, 35, 63, 0.1);
+  vertical-align: top;
+}
+
+.schedule-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f3f6f8;
+  color: #3a4d68;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.65rem 0.4rem;
+  text-align: center;
+}
+
+.schedule-grid .sg-time {
+  width: 7.5rem;
+  background: #f8fafb;
+  color: #3a4d68;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-align: right;
+  padding: 0.35rem 0.55rem;
+  white-space: nowrap;
+}
+
+.schedule-grid .sg-empty {
+  background: #fbfcfd;
+  height: 2.1rem;
+}
+
+.schedule-grid .sg-block {
+  background: linear-gradient(160deg, rgba(11, 110, 110, 0.16), rgba(11, 110, 110, 0.08));
+  border-left: 3px solid #0b6e6e;
+  color: #10233f;
+  padding: 0.4rem 0.45rem;
+  line-height: 1.3;
+}
+
+.schedule-grid .sg-block.is-overlap {
+  background: linear-gradient(160deg, rgba(180, 35, 24, 0.16), rgba(217, 119, 6, 0.12));
+  border-left-color: #b42318;
+}
+
+.schedule-grid .sg-block-label {
+  display: block;
+  font-weight: 700;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.schedule-grid .sg-block-label + .sg-block-label {
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(180, 35, 24, 0.35);
+}
+
+.schedule-grid .sg-overlap-flag {
+  display: inline-block;
+  margin-bottom: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(180, 35, 24, 0.12);
+  color: #b42318;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.schedule-grid-meta {
+  margin: 0 0 0.75rem;
+  color: #3a4d68;
+  font-size: 0.9rem;
+}
+
+/* Match faculty timetable panel width inside View schedule */
+.modal-card.modal-schedule {
+  width: min(1120px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.35rem 1.5rem 1.25rem;
+}

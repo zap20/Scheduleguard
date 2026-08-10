@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student schedule — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/schedule-grid.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            Schedules · Student schedule · <span id="user-label">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <div class="module-tabs" role="tablist" aria-label="Student schedule sections">
+        <button type="button" class="module-tab is-active" data-pane="blocks" role="tab">
+          Class blocks
+        </button>
+        <button type="button" class="module-tab" data-pane="timetable" role="tab">
+          Student timetable
+        </button>
+      </div>
+
+      <section id="pane-blocks" class="module-pane" data-pane="blocks">
+        <section class="panel" style="margin-bottom: 1rem" id="command-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Create blocks with AI</h2>
+              <p class="panel-sub">
+                Type a plain-language instruction, review the parse, then generate ranked plans.
+                Example:
+                <em>“1st year regular, 2 blocks Mon Sat”</em>
+                or <em>M Sa</em> / <em>fri</em> / <em>mon thu sat</em>.
+                Days: Mon, Tue, Wed, Thu, Fri, Sat, Sun (or M T W TH F Sa Su).
+                Curriculum year defaults when omitted.
+              </p>
+            </div>
+          </div>
+          <form id="command-form" class="stack-form inset-form">
+            <label>
+              Command
+              <input
+                id="command-text"
+                name="command"
+                type="text"
+                required
+                maxlength="500"
+                placeholder="e.g. 1st year regular, 2 blocks Mon Sat"
+              />
+            </label>
+            <label id="command-semester-wrap" hidden>
+              Semester (not stated in command — confirm or change)
+              <select id="command-semester" name="semester">
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+                <option value="Summer">Summer</option>
+              </select>
+            </label>
+            <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem">
+              <button class="btn" type="submit" style="width: auto; min-width: 140px">
+                Parse command
+              </button>
+            </div>
+          </form>
+
+          <div id="command-parse-card" class="conflict-panel" hidden style="margin-top: 1rem">
+            <p id="command-confirm-summary" style="margin: 0 0 0.75rem; font-weight: 600"></p>
+            <dl id="command-parse-details" class="command-parse-details"></dl>
+            <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem; margin-top: 0.75rem">
+              <button type="button" class="btn btn-secondary" id="command-cancel-parse" style="width: auto">
+                Cancel
+              </button>
+              <button type="button" class="btn" id="command-confirm-generate" style="width: auto; min-width: 160px">
+                Confirm &amp; generate
+              </button>
+            </div>
+          </div>
+
+          <div id="command-options" hidden style="margin-top: 1rem"></div>
+        </section>
+
+        <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Class blocks</h2>
+            <p class="panel-sub">
+              Blocks created by AI or manually. Program Heads assign students on Enrollment.
+            </p>
+          </div>
+          <div class="panel-head-actions">
+            <span class="term-chip" id="blocks-term-chip">…</span>
+            <div class="count-chip"><span id="blocks-count">0</span> blocks</div>
+            <button id="create-btn" class="btn" type="button" style="width: auto; min-width: 140px">
+              Create block
+            </button>
+          </div>
+        </div>
+
+        <form id="blocks-filter-form" class="filter-bar">
+          <label>
+            Year level
+            <select id="filter-yearLevel" name="yearLevel">
+              <option value="">All year levels</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="blocks-alert" class="alert alert-error" role="alert"></div>
+        <div id="blocks-success" class="alert alert-success" role="status"></div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Block</th>
+                <th>Year level</th>
+                <th>Type</th>
+                <th>Students</th>
+                <th>Schedules</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="blocks-body"></tbody>
+          </table>
+          <p id="blocks-empty" class="empty-state" hidden>No class blocks for this term yet.</p>
+        </div>
+      </section>
+      </section>
+
+      <section id="pane-timetable" class="module-pane" data-pane="timetable" hidden>
+        <section class="panel" style="margin-bottom: 1rem">
+          <div class="panel-head">
+            <div>
+              <h2>Student timetable</h2>
+              <p class="panel-sub">
+                Distributed enrollments — subject code, instructor
+                (<strong>TBF</strong> when unset), and block.
+              </p>
+            </div>
+            <span class="term-chip" id="term-chip">…</span>
+            <div class="count-chip"><span id="result-count">0</span> rows</div>
+          </div>
+
+          <form id="filter-form" class="filter-bar">
+            <label>
+              Student
+              <select id="filter-studentId" name="studentId">
+                <option value="">All students</option>
+              </select>
+            </label>
+            <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+          </form>
+
+          <div id="schedule-alert" class="alert alert-error" role="alert"></div>
+          <div id="schedule-grid"></div>
+          <p id="schedule-empty" class="empty-state" hidden>
+            No distributed student schedules for this filter.
+          </p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Enrollment list</h2>
+              <p class="panel-sub">Same rows in list form.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Subject code</th>
+                  <th>Instructor</th>
+                  <th>Block</th>
+                  <th>Day / Time</th>
+                  <th>Room</th>
+                </tr>
+              </thead>
+              <tbody id="schedule-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <div id="create-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="create-title" style="width: min(420px, 100%)">
+        <h3 id="create-title">Create class block</h3>
+        <p class="panel-sub">Uses the current academic term. Block number auto-increments if left blank.</p>
+        <form id="create-form" class="stack-form">
+          <label>
+            Year level
+            <select id="create-yearLevel" name="yearLevel" required></select>
+          </label>
+          <label>
+            Block number <span class="cell-muted">(optional)</span>
+            <input id="create-blockNumber" name="blockNumber" type="number" min="1" placeholder="Auto" />
+          </label>
+          <label>
+            Name <span class="cell-muted">(optional)</span>
+            <input id="create-name" name="name" type="text" placeholder="e.g. 1st Year Block 1" />
+          </label>
+          <label>
+            Student type
+            <select id="create-studentType" name="studentType">
+              <option value="regular">Regular</option>
+              <option value="irregular">Irregular</option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="create-cancel">Cancel</button>
+            <button type="submit" class="btn" id="create-submit">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="block-schedule-modal" class="modal" hidden>
+      <div class="modal-card modal-schedule" role="dialog" aria-labelledby="block-schedule-title">
+        <h3 id="block-schedule-title">Block schedule</h3>
+        <p id="block-schedule-sub" class="panel-sub">Weekly grid for this class block.</p>
+        <div id="block-schedule-grid"></div>
+        <div class="table-wrap" style="margin-top: 1rem">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Subject code</th>
+                <th>Instructor</th>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Room</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="block-schedule-body"></tbody>
+          </table>
+          <p id="block-schedule-empty" class="empty-state" hidden>No schedules linked to this block yet.</p>
+        </div>
+        <div class="form-actions" style="margin-top: 1rem">
+          <button type="button" class="btn btn-secondary" id="block-schedule-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/schedule-grid.js"></script>
+    <script src="js/schedule-command-panel.js"></script>
+    <script src="js/student-schedule-dean.js"></script>
+  </body>
+</html>

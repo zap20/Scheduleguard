@@ -1,0 +1,5 @@
+RewriteEngine On
+
+# Allow direct PHP script access under /api
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ - [R=404,L]

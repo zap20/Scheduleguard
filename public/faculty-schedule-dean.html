@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Faculty schedules — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/schedule-grid.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            Schedules · Faculty schedule · <span id="user-label">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel" style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>Faculty timetable</h2>
+            <p class="panel-sub">
+              Teaching assignments for the current term — subject code, instructor
+              (<strong>TBF</strong> when unset), and block.
+            </p>
+          </div>
+          <span class="term-chip" id="term-chip">…</span>
+          <div class="count-chip"><span id="result-count">0</span> rows</div>
+        </div>
+
+        <form id="filter-form" class="filter-bar">
+          <label>
+            Faculty
+            <select id="filter-facultyId" name="facultyId">
+              <option value="">All faculty</option>
+              <option value="TBF">TBF (unassigned)</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="schedule-alert" class="alert alert-error" role="alert"></div>
+        <div id="schedule-grid"></div>
+        <p id="schedule-empty" class="empty-state" hidden>
+          No faculty schedules for this filter.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Teaching load list</h2>
+            <p class="panel-sub">Same rows in list form.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Instructor</th>
+                <th>Subject code</th>
+                <th>Block</th>
+                <th>Day / Time</th>
+                <th>Room</th>
+              </tr>
+            </thead>
+            <tbody id="schedule-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/schedule-grid.js"></script>
+    <script src="js/faculty-schedule-dean.js"></script>
+  </body>
+</html>

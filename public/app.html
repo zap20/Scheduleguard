@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            <span id="user-name">…</span> · <span id="user-role">…</span> ·
+            <span id="user-email">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="dash-hero panel">
+        <div>
+          <h2 id="dash-title">Dashboard</h2>
+          <p id="dash-blurb" class="panel-sub">Loading your workspace…</p>
+        </div>
+        <nav id="role-nav" class="nav-links" aria-label="Full views"></nav>
+      </section>
+
+      <div id="dash-alert" class="alert alert-error" role="alert"></div>
+      <div id="dashboard-root" class="dash-grid" aria-live="polite"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enrollment — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            Enrollment &amp; distribution · <span id="user-label">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel" style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>Add students to a class block</h2>
+            <p class="panel-sub">
+              Term: <strong id="term-label">…</strong>. Dean creates the block first.
+              You assign cleared students to that block. If the block already has
+              confirmed schedules, enrollments are created automatically (status
+              <strong>assigned</strong>).
+            </p>
+          </div>
+          <div class="count-chip"><span id="member-count">0</span> in block</div>
+        </div>
+
+        <div id="enrollment-alert" class="alert alert-error" role="alert"></div>
+        <div id="enrollment-success" class="alert alert-success" role="status"></div>
+
+        <form id="enroll-form" class="filter-bar enroll-bar">
+          <label>
+            Class block
+            <select id="classBlockId" name="classBlockId" required>
+              <option value="">Select block…</option>
+            </select>
+          </label>
+          <label>
+            Cleared student
+            <select id="studentId" name="studentId" required>
+              <option value="">Select student…</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 140px">
+            Add to block
+          </button>
+        </form>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Email / ID</th>
+                <th>Status</th>
+                <th>Assigned by</th>
+              </tr>
+            </thead>
+            <tbody id="members-body"></tbody>
+          </table>
+          <p id="members-empty" class="empty-state" hidden>
+            Select a class block to see its students, or add the first student above.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Distribute schedules</h2>
+            <p class="panel-sub">
+              Assigned enrollments become <strong>distributed</strong> so they appear on the
+              student’s schedule view.
+            </p>
+          </div>
+          <div class="count-chip"><span id="assigned-count">0</span> assigned</div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Schedule</th>
+                <th>When / Room</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="assigned-body"></tbody>
+          </table>
+          <p id="assigned-empty" class="empty-state" hidden>No assigned enrollments waiting to distribute.</p>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/enrollment.js"></script>
+  </body>
+</html>

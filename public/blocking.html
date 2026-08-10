@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blocking — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">Student blocking · <span id="user-label">…</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="page-title">Blocking management</h2>
+            <p id="page-sub" class="panel-sub">
+              Filterable list of student blocks. Create and status updates are limited by role.
+            </p>
+          </div>
+          <div class="panel-head-actions">
+            <div class="count-chip"><span id="result-count">0</span> total</div>
+            <button id="issue-btn" class="btn" type="button" style="width: auto; min-width: 140px" hidden>
+              Issue block
+            </button>
+          </div>
+        </div>
+
+        <form id="filter-form" class="filter-bar">
+          <label id="department-filter-wrap">
+            Department
+            <select id="departmentId" name="departmentId">
+              <option value="">All departments</option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select id="status" name="status">
+              <option value="">All statuses</option>
+              <option value="Active">Active</option>
+              <option value="Cleared">Cleared</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="blocking-alert" class="alert alert-error" role="alert"></div>
+        <div id="blocking-success" class="alert alert-success" role="status"></div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Department</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Issued by</th>
+                <th>Created</th>
+                <th id="actions-col" hidden>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="blocking-body"></tbody>
+          </table>
+          <p id="blocking-empty" class="empty-state" hidden>No block records match these filters.</p>
+        </div>
+
+        <div class="pagination" id="pagination">
+          <button id="prev-page" class="btn btn-secondary" type="button" style="width: auto">Previous</button>
+          <span id="page-label" class="page-label">Page 1</span>
+          <button id="next-page" class="btn btn-secondary" type="button" style="width: auto">Next</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="issue-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="issue-title">
+        <h3 id="issue-title">Issue block</h3>
+        <p class="panel-sub">Creates an Active block for the selected student.</p>
+        <form id="issue-form" class="stack-form">
+          <label>
+            Student
+            <select id="issue-studentId" name="studentId" required>
+              <option value="">Select student…</option>
+            </select>
+          </label>
+          <label id="issue-department-wrap">
+            Department
+            <select id="issue-departmentId" name="departmentId" required>
+              <option value="">Select department…</option>
+            </select>
+          </label>
+          <label>
+            Reason
+            <textarea id="issue-reason" name="reason" rows="3" required placeholder="Why is this student blocked?"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="issue-cancel" style="width: auto">Cancel</button>
+            <button type="submit" class="btn" id="issue-submit" style="width: auto; min-width: 120px">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="status-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="status-title">
+        <h3 id="status-title">Update block status</h3>
+        <p id="status-summary" class="panel-sub"></p>
+        <form id="status-form" class="stack-form">
+          <input type="hidden" id="status-blockId" name="uid" />
+          <label>
+            Status
+            <select id="status-value" name="status" required>
+              <option value="Active">Active</option>
+              <option value="Cleared">Cleared</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="status-cancel" style="width: auto">Cancel</button>
+            <button type="submit" class="btn" id="status-submit" style="width: auto; min-width: 120px">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/blocking.js"></script>
+  </body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Schedule Grid Demo — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/schedule-grid.css" />
+    <style>
+      .demo-shell {
+        width: min(1100px, 100%);
+        margin: 0 auto;
+      }
+      .demo-panel {
+        margin-bottom: 1.25rem;
+      }
+      .demo-panel h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.2rem;
+      }
+      .demo-note {
+        margin: 0 0 0.85rem;
+        color: var(--ink-soft);
+        font-size: 0.92rem;
+        line-height: 1.45;
+      }
+      .demo-code {
+        display: block;
+        margin: 0 0 0.85rem;
+        padding: 0.75rem 0.85rem;
+        border-radius: 10px;
+        background: rgba(16, 35, 63, 0.05);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        white-space: pre-wrap;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="demo-shell">
+        <header class="topbar">
+          <div>
+            <h1>ScheduleGuard</h1>
+            <div class="meta">Standalone schedule-grid component demo (mock data only)</div>
+          </div>
+          <a class="text-link" href="app.html">Back to app</a>
+        </header>
+
+        <section class="panel demo-panel">
+          <h2>Default operating hours (7:00 AM – 8:30 PM)</h2>
+          <p class="demo-note">
+            Includes a normal multi-slot class, a weekend class, a block with non-30-minute
+            boundaries (rounded outward), and an intentional overlap on Wednesday.
+          </p>
+          <code class="demo-code" id="sample-source"></code>
+          <div id="grid-default"></div>
+        </section>
+
+        <section class="panel demo-panel">
+          <h2>Custom hours (8:00 AM – 5:00 PM)</h2>
+          <p class="demo-note">
+            Same blocks, clamped to a shorter day. Classes outside the window are omitted.
+          </p>
+          <div id="grid-custom"></div>
+        </section>
+      </div>
+    </div>
+
+    <script src="js/schedule-grid.js"></script>
+    <script>
+      (function () {
+        const mockBlocks = [
+          {
+            day: "Monday",
+            startTime: "08:00",
+            endTime: "09:30",
+            label: "CS101",
+          },
+          {
+            day: "Wednesday",
+            startTime: "10:00",
+            endTime: "11:30",
+            label: "IT205",
+          },
+          // Overlaps the Wednesday block on purpose
+          {
+            day: "Wed",
+            startTime: "10:30",
+            endTime: "12:00",
+            label: "OVERLAP",
+          },
+          // Non-30-minute boundaries → round 8:10→8:00, 9:20→9:30
+          {
+            day: "Thursday",
+            startTime: "08:10",
+            endTime: "09:20",
+            label: "MATH110",
+          },
+          {
+            day: "Friday",
+            startTime: "13:00",
+            endTime: "14:00",
+            label: "HUM012",
+          },
+          {
+            day: "Saturday",
+            startTime: "09:00",
+            endTime: "10:30",
+            label: "LAB900",
+          },
+          // Outside custom 8–5 window end (kept for default grid)
+          {
+            day: "Tuesday",
+            startTime: "18:00",
+            endTime: "19:30",
+            label: "EVE400",
+          },
+        ];
+
+        document.getElementById("sample-source").textContent =
+          "renderScheduleGrid(mockBlocks);\n\n" +
+          JSON.stringify(mockBlocks, null, 2);
+
+        document.getElementById("grid-default").innerHTML =
+          window.renderScheduleGrid(mockBlocks);
+
+        document.getElementById("grid-custom").innerHTML =
+          window.renderScheduleGrid(mockBlocks, {
+            startHour: 8,
+            endHour: 17,
+          });
+      })();
+    </script>
+  </body>
+</html>

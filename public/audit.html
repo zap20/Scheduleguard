@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audit Trail — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">Audit trail · <span id="user-label">…</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>System audit log</h2>
+            <p class="panel-sub">
+              Read-only history of creates, updates, role/status changes, and other
+              audited actions across the system.
+            </p>
+          </div>
+          <div class="count-chip"><span id="result-count">0</span> total</div>
+        </div>
+
+        <form id="filter-form" class="filter-bar">
+          <label>
+            Module
+            <select id="module" name="module">
+              <option value="">All modules</option>
+            </select>
+          </label>
+          <label class="grow">
+            User
+            <select id="userId" name="userId">
+              <option value="">All users</option>
+            </select>
+          </label>
+          <label>
+            From
+            <input id="dateFrom" name="dateFrom" type="date" />
+          </label>
+          <label>
+            To
+            <input id="dateTo" name="dateTo" type="date" />
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="audit-alert" class="alert alert-error" role="alert"></div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Module</th>
+                <th>Message</th>
+                <th>Related ID</th>
+              </tr>
+            </thead>
+            <tbody id="audit-body"></tbody>
+          </table>
+          <p id="audit-empty" class="empty-state" hidden>No audit entries match these filters.</p>
+        </div>
+
+        <div class="pagination">
+          <button id="prev-page" class="btn btn-secondary" type="button" style="width: auto">Previous</button>
+          <span id="page-label" class="page-label">Page 1</span>
+          <button id="next-page" class="btn btn-secondary" type="button" style="width: auto">Next</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/audit.js"></script>
+  </body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Teaching Schedule — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/schedule-grid.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">Faculty schedule · <span id="user-label">…</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel" style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>Weekly timetable</h2>
+            <p class="panel-sub">
+              Your teaching assignments for this semester — subject code and block for each class.
+            </p>
+          </div>
+          <span class="term-chip" id="term-chip">…</span>
+          <div class="count-chip"><span id="result-count">0</span> subjects</div>
+        </div>
+        <div id="schedule-alert" class="alert alert-error" role="alert"></div>
+        <div id="schedule-grid"></div>
+        <p id="schedule-empty" class="empty-state" hidden>
+          No teaching assignments yet.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Subject list</h2>
+            <p class="panel-sub">
+              One row per class — code, block, and when/where you teach.
+            </p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Subject code</th>
+                <th>Block</th>
+                <th>Day / Time</th>
+                <th>Room</th>
+              </tr>
+            </thead>
+            <tbody id="schedule-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/schedule-grid.js"></script>
+    <script src="js/faculty-schedule.js"></script>
+  </body>
+</html>

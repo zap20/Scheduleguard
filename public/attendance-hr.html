@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Attendance Review — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">HR performance review · <span id="user-label">…</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Faculty attendance review</h2>
+            <p class="panel-sub">
+              Read-only cross-faculty attendance for <strong>performance evaluation</strong>.
+              Filter by department and date range. Viewing other faculty records is audit-logged.
+            </p>
+          </div>
+          <div class="count-chip"><span id="result-count">0</span> records</div>
+        </div>
+
+        <form id="filter-form" class="filter-bar">
+          <label>
+            Department
+            <select id="departmentId" name="departmentId">
+              <option value="">All departments</option>
+            </select>
+          </label>
+          <label>
+            From
+            <input id="dateFrom" name="dateFrom" type="date" />
+          </label>
+          <label>
+            To
+            <input id="dateTo" name="dateTo" type="date" />
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 120px">Apply</button>
+        </form>
+
+        <div id="attendance-alert" class="alert alert-error" role="alert"></div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Faculty</th>
+                <th>Subject</th>
+                <th>Room</th>
+                <th>Expected</th>
+                <th>Actual scan</th>
+                <th>Status</th>
+                <th>Checker</th>
+              </tr>
+            </thead>
+            <tbody id="attendance-body"></tbody>
+          </table>
+          <p id="attendance-empty" class="empty-state" hidden>No attendance records match these filters.</p>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/attendance-hr.js"></script>
+  </body>
+</html>

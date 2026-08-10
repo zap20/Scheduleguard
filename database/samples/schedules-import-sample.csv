@@ -1,0 +1,4 @@
+facultyId,roomId,departmentId,subjectCode,subjectName,day,startTime,endTime,academicYear,semester
+user-faculty,room-lab101,dept-comp,CS201,Data Structures,Tuesday,13:00,14:30,2025,1
+user-faculty,room-lab101,dept-comp,BAD01,Bad Row Missing End,Friday,09:00,,2025,1
+not-a-real-faculty,room-205,dept-comp,BAD02,Invalid Faculty,Thursday,08:00,09:00,2025,1
