@@ -208,7 +208,7 @@
         datasets: [
           {
             data: d.attendance.byStatus.values,
-            backgroundColor: ["#067647", "#d97706", "#b42318", "#64748b"],
+            backgroundColor: ["#2e7d4f", "#f67b56", "#c62828", "#6b6b6b"],
           },
         ],
       },
@@ -321,7 +321,7 @@
           {
             label: "Attendance",
             data: d.attendanceChart.values,
-            backgroundColor: ["#067647", "#d97706", "#b42318", "#64748b"],
+            backgroundColor: ["#2e7d4f", "#f67b56", "#c62828", "#6b6b6b"],
           },
         ],
       },
@@ -351,7 +351,7 @@
         datasets: [
           {
             data: d.attendanceChart.values,
-            backgroundColor: ["#067647", "#d97706", "#b42318", "#64748b"],
+            backgroundColor: ["#2e7d4f", "#f67b56", "#c62828", "#6b6b6b"],
           },
         ],
       },
@@ -394,7 +394,7 @@
         datasets: [
           {
             data: [d.distribution.assigned, d.distribution.distributed],
-            backgroundColor: ["#d97706", "#0b6e6e"],
+            backgroundColor: ["#f67b56", "#c19be9"],
           },
         ],
       },
@@ -408,12 +408,12 @@
           {
             label: "Active",
             data: d.blockingChart.active,
-            backgroundColor: "#b42318",
+            backgroundColor: "#c62828",
           },
           {
             label: "Cleared",
             data: d.blockingChart.cleared,
-            backgroundColor: "#067647",
+            backgroundColor: "#2e7d4f",
           },
         ],
       },

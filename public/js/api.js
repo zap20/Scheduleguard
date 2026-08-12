@@ -2,8 +2,10 @@
   "use strict";
 
   /**
-   * Resolve API base relative to /public so this works under
-   * http://localhost/ScheduleGuard/public or a vhost pointed at public/.
+   * Resolve API base for:
+   * - http://localhost/Scheduleguard/… (WAMP subdirectory)
+   * - http://localhost/Scheduleguard/public/… (legacy)
+   * - http://127.0.0.1:8765/… (php -S + router.php)
    */
   function apiBase() {
     const path = window.location.pathname.replace(/\\/g, "/");
@@ -11,8 +13,19 @@
     if (publicIdx !== -1) {
       return path.slice(0, publicIdx) + "/api";
     }
-    // Built-in server / vhost with router.php: site root maps to public/, API at /api.
-    return "/api";
+
+    let dir = path;
+    if (dir.endsWith("/")) {
+      dir = dir.slice(0, -1);
+    } else {
+      const leaf = dir.split("/").pop() || "";
+      // Strip page filenames (app.html); keep bare folder segments (…/Scheduleguard).
+      if (/\.[a-zA-Z0-9]+$/.test(leaf)) {
+        dir = dir.replace(/\/[^/]+$/, "");
+      }
+    }
+
+    return (dir || "") + "/api";
   }
 
   const TOKEN_KEY = "scheduleguard_token";

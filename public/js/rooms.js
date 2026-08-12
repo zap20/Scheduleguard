@@ -82,9 +82,9 @@
         escapeHtml(row.capacity) +
         "</td>" +
         '<td class="row-actions">' +
-        '<button type="button" class="btn btn-secondary btn-edit" data-uid="' +
+        '<button type="button" class="btn btn-secondary btn-small btn-edit" data-uid="' +
         escapeHtml(row.uid) +
-        '" style="width:auto;min-width:70px">Edit</button>' +
+        '">Edit</button>' +
         "</td>";
       bodyEl.appendChild(tr);
     });

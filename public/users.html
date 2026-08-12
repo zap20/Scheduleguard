@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
@@ -93,7 +93,7 @@
     </div>
 
     <div id="user-modal" class="modal" hidden>
-      <div class="modal-card" role="dialog" aria-labelledby="user-modal-title" style="width: min(520px, 100%)">
+      <div class="modal-card" role="dialog" aria-labelledby="user-modal-title">
         <h3 id="user-modal-title">Create user</h3>
         <p id="user-modal-sub" class="panel-sub">Password is required for new accounts.</p>
         <form id="user-form" class="stack-form">
@@ -153,8 +153,8 @@
             <input id="form-password" name="password" type="password" minlength="8" autocomplete="new-password" />
           </label>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" id="user-cancel" style="width: auto">Cancel</button>
-            <button type="submit" class="btn" id="user-submit" style="width: auto; min-width: 120px">Save</button>
+            <button type="button" class="btn btn-secondary" id="user-cancel">Cancel</button>
+            <button type="submit" class="btn" id="user-submit">Save</button>
           </div>
         </form>
       </div>

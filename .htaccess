@@ -1,8 +1,20 @@
 Options -Indexes
+DirectoryIndex index.html index.php
 
-# Deny direct web access to non-public application internals when the
-# project root is inside the Apache document root.
+# Serve the app from /public while keeping /api reachable under
+# http://localhost/Scheduleguard (or /scheduleguard) without a custom host/port.
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteRule ^(config|includes|database)/ - [F,L]
+
+  # Block direct web access to application internals and secrets.
+  RewriteRule ^(?:config|includes|database)(?:/|$) - [F,L]
+  RewriteRule ^\.env(?:\.example)?$ - [F,L]
+  RewriteRule ^router\.php$ - [F,L]
+
+  # API and already-public paths pass through as-is.
+  RewriteRule ^api(?:/|$) - [L]
+  RewriteRule ^public(?:/|$) - [L]
+
+  # Everything else is served from public/ (site root for the browser).
+  RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>

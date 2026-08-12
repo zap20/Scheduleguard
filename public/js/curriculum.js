@@ -95,9 +95,9 @@
       const section = document.createElement("div");
       section.className = "curriculum-group";
       section.innerHTML =
-        "<h3 class=\"form-title\" style=\"margin-top:1.25rem\">" +
+        '<h3 class="form-title">' +
         escapeHtml(key) +
-        ' <span class="count-chip" style="display:inline-flex;margin-left:0.5rem">' +
+        '<span class="count-chip">' +
         groups[key].length +
         "</span></h3>";
 
@@ -107,7 +107,7 @@
       table.className = "data-table";
       table.innerHTML =
         "<thead><tr>" +
-        "<th>Code</th><th>Title</th><th>Units</th><th>Room</th><th>Curriculum</th><th>Department</th><th>Status</th><th>Actions</th>" +
+        "<th>Code</th><th>Title</th><th>Units</th><th>Room</th><th>Curriculum</th><th>Department</th><th>Status</th><th class=\"col-actions\">Actions</th>" +
         "</tr></thead>";
       const tbody = document.createElement("tbody");
 
@@ -138,15 +138,15 @@
           '">' +
           escapeHtml(row.status) +
           "</span></td>" +
-          "<td class=\"row-actions\">" +
-          '<button type="button" class="btn btn-secondary btn-edit" data-uid="' +
+          '<td class="row-actions">' +
+          '<button type="button" class="btn btn-secondary btn-small btn-edit" data-uid="' +
           escapeHtml(row.uid) +
-          '" style="width:auto;min-width:70px">Edit</button> ' +
+          '">Edit</button>' +
           (archived
             ? ""
-            : '<button type="button" class="btn btn-secondary btn-archive" data-uid="' +
+            : '<button type="button" class="btn btn-secondary btn-small btn-archive" data-uid="' +
               escapeHtml(row.uid) +
-              '" style="width:auto;min-width:80px">Archive</button>') +
+              '">Archive</button>') +
           "</td>";
         tbody.appendChild(tr);
       });

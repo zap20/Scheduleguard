@@ -81,6 +81,10 @@
     document.querySelectorAll('.topbar a.text-link[href="app.html"]').forEach(function (a) {
       a.hidden = true;
     });
+
+    document.querySelectorAll(".topbar-actions #logout-btn, .topbar #logout-btn").forEach(function (btn) {
+      btn.hidden = true;
+    });
   }
 
   function renderNav(role) {

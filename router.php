@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 /**
- * Router for PHP's built-in server:
+ * Router for PHP's built-in server (optional alternative to Apache/WAMP):
  *   php -S 127.0.0.1:8765 router.php
+ *
+ * Preferred local URL with WAMP:
+ *   http://localhost/scheduleguard
  *
  * Serves /public as the site root and keeps /api available.
  */

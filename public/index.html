@@ -7,53 +7,96 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
   </head>
   <body>
-    <main class="auth-shell">
-      <section class="auth-panel" aria-labelledby="brand">
-        <h1 id="brand" class="brand">ScheduleGuard</h1>
-        <p class="tagline">
-          Sign in to manage faculty schedules, attendance oversight, and academic clearance.
-        </p>
-
-        <div id="login-alert" class="alert alert-error" role="alert"></div>
-
-        <form id="login-form" novalidate>
-          <div class="field">
-            <label for="email">Email</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autocomplete="username"
-              required
-              placeholder="you@campus.edu"
-            />
+    <main class="auth-layout">
+      <div class="auth-stage">
+        <aside class="auth-brand">
+          <div class="auth-brand-copy">
+            <p class="auth-eyebrow">Campus operations</p>
+            <h1 id="brand" class="brand">ScheduleGuard</h1>
+            <p class="tagline">
+              Faculty schedules, attendance oversight, and academic clearance — kept in one place.
+            </p>
           </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required
-              placeholder="••••••••"
-            />
-          </div>
-          <button id="login-submit" class="btn" type="submit">Sign in</button>
-        </form>
 
-        <p class="hint">
-          Seeded accounts use password <code>Password123!</code>
-          (e.g. <code>faculty@scheduleguard.test</code>,
-          <code>dean@scheduleguard.test</code>).
-        </p>
-      </section>
+          <div class="schedule-ghost" aria-hidden="true">
+            <div class="schedule-ghost__day">
+              <span class="schedule-ghost__label">Mon</span>
+              <span class="schedule-ghost__block schedule-ghost__block--a"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--gap"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--c"></span>
+            </div>
+            <div class="schedule-ghost__day">
+              <span class="schedule-ghost__label">Tue</span>
+              <span class="schedule-ghost__block schedule-ghost__block--b"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--e"></span>
+            </div>
+            <div class="schedule-ghost__day">
+              <span class="schedule-ghost__label">Wed</span>
+              <span class="schedule-ghost__block schedule-ghost__block--c"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--gap"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--d"></span>
+            </div>
+            <div class="schedule-ghost__day">
+              <span class="schedule-ghost__label">Thu</span>
+              <span class="schedule-ghost__block schedule-ghost__block--a"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--b"></span>
+            </div>
+            <div class="schedule-ghost__day">
+              <span class="schedule-ghost__label">Fri</span>
+              <span class="schedule-ghost__block schedule-ghost__block--e"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--gap"></span>
+              <span class="schedule-ghost__block schedule-ghost__block--a"></span>
+            </div>
+          </div>
+        </aside>
+
+        <section class="auth-form-col" aria-labelledby="sign-in-title">
+          <div class="auth-panel">
+            <h2 id="sign-in-title" class="auth-form-title">Sign in</h2>
+            <p class="tagline">Use your campus account to continue.</p>
+
+            <div id="login-alert" class="alert alert-error" role="alert"></div>
+
+            <form id="login-form" novalidate>
+              <div class="field">
+                <label for="email">Email</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autocomplete="username"
+                  required
+                  placeholder="you@campus.edu"
+                />
+              </div>
+              <div class="field">
+                <label for="password">Password</label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+                  placeholder="••••••••"
+                />
+              </div>
+              <button id="login-submit" class="btn" type="submit">Sign in</button>
+            </form>
+
+            <p class="hint">
+              Seeded accounts use password <code>Password123!</code>
+              (e.g. <code>faculty@scheduleguard.test</code>,
+              <code>dean@scheduleguard.test</code>).
+            </p>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="js/api.js"></script>
