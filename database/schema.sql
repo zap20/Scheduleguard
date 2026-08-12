@@ -210,6 +210,9 @@ CREATE TABLE attendanceRecord (
   isOffline TINYINT(1) NOT NULL DEFAULT 0,
   timestamp DATETIME NOT NULL,
   syncedAt DATETIME NULL,
+  -- Countable late/absent hours use schedule.startTime/endTime + ATTENDANCE_GRACE_MINUTES
+  -- (default 20). Scan within grace → 0 late. Scan after grace → late from class start
+  -- (e.g. 07:35 → 35 min). Absent/NoSchedule → full class duration.
   PRIMARY KEY (uid),
   KEY idx_attendance_schedule (scheduleId),
   KEY idx_attendance_checker (checkerId),

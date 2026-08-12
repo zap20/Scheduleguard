@@ -64,6 +64,7 @@ jsonSuccess([
         'academicYear' => $academicYear,
         'semester' => $semester,
     ],
+    'graceMinutes' => attendanceGraceMinutes(),
     'topAbsent' => $topAbsent,
     'count' => count($topAbsent),
 ]);

@@ -50,9 +50,18 @@
     return "?" + params.toString();
   }
 
-  function renderTopAbsent(rows, term) {
+  function formatHours(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "0";
+    return n % 1 === 0 ? String(n) : n.toFixed(2);
+  }
+
+  function renderTopAbsent(rows, term, graceMinutes) {
     if (termChip) {
-      termChip.textContent = term && term.label ? term.label : "Semester";
+      const graceLabel =
+        graceMinutes != null ? " · " + graceMinutes + "-min grace" : "";
+      termChip.textContent =
+        (term && term.label ? term.label : "Semester") + graceLabel;
     }
 
     if (!rows.length) {
@@ -76,13 +85,13 @@
             escapeHtml(row.department.name) +
             "</td>" +
             "<td>" +
-            escapeHtml(row.absentCount) +
+            escapeHtml(formatHours(row.absentHours)) +
             "</td>" +
             "<td>" +
-            escapeHtml(row.noScheduleCount) +
+            escapeHtml(formatHours(row.lateHours)) +
             "</td>" +
             "<td><strong>" +
-            escapeHtml(row.totalAbsent) +
+            escapeHtml(formatHours(row.totalHours)) +
             "</strong></td>" +
             "</tr>"
           );
@@ -94,7 +103,7 @@
       return r.faculty.fullName;
     });
     const values = rows.map(function (r) {
-      return r.totalAbsent;
+      return Number(r.totalHours) || 0;
     });
 
     const canvas = document.getElementById("top-absent-chart");
@@ -107,7 +116,7 @@
         labels: labels.length ? labels : ["No data"],
         datasets: [
           {
-            label: "Absence events",
+            label: "Counted hours (absent + late)",
             data: values.length ? values : [0],
             backgroundColor: "rgba(180, 35, 24, 0.55)",
             borderRadius: 8,
@@ -124,7 +133,7 @@
         scales: {
           x: {
             beginAtZero: true,
-            ticks: { precision: 0 },
+            title: { display: true, text: "Hours" },
           },
         },
       },
@@ -137,7 +146,11 @@
       const result = await window.ScheduleGuardApi.api(
         "/attendance/analytics.php" + analyticsQuery()
       );
-      renderTopAbsent(result.data.topAbsent || [], result.data.term);
+      renderTopAbsent(
+        result.data.topAbsent || [],
+        result.data.term,
+        result.data.graceMinutes
+      );
     } catch (err) {
       alertEl.textContent = err.message || "Unable to load absence analytics.";
       alertEl.classList.add("show");
@@ -177,7 +190,11 @@
       const current = bootstrap.data.term.current || bootstrap.data.term;
       yearInput.value = String(current.academicYear || new Date().getFullYear());
       semesterSelect.value = current.semester || "1";
-      renderTopAbsent(bootstrap.data.topAbsent || [], bootstrap.data.term);
+      renderTopAbsent(
+        bootstrap.data.topAbsent || [],
+        bootstrap.data.term,
+        bootstrap.data.graceMinutes
+      );
       return load();
     })
     .catch(function (err) {

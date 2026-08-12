@@ -238,7 +238,10 @@ INSERT INTO schedule (
   NOW()
 );
 
--- Attendance sample rows
+-- Attendance sample rows (small demo set).
+-- For ~2 months of attendance per faculty (Ana Santos = 8h Absent,
+-- Ben Garcia = complete Present), run:
+--   php database/seed_attendance_two_months.php
 INSERT INTO attendanceRecord (
   uid, scheduleId, checkerId, status, isOffline, timestamp, syncedAt
 ) VALUES

@@ -64,6 +64,17 @@
     return '<span class="status-badge ' + cls + '">' + escapeHtml(status) + "</span>";
   }
 
+  function formatCounted(counted) {
+    if (!counted) return "—";
+    const late = Number(counted.lateMinutes) || 0;
+    const absent = Number(counted.absentMinutes) || 0;
+    if (late <= 0 && absent <= 0) return "0";
+    const parts = [];
+    if (absent > 0) parts.push(absent + "m abs");
+    if (late > 0) parts.push(late + "m late");
+    return parts.join(" · ");
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -122,6 +133,9 @@
           "<td>" +
           statusBadge(row.status) +
           (row.isOffline ? '<span class="offline-tag">offline</span>' : "") +
+          "</td>" +
+          "<td>" +
+          formatCounted(row.counted) +
           "</td>" +
           "<td>" +
           escapeHtml(row.checker.fullName) +

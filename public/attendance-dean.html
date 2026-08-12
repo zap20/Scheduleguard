@@ -29,8 +29,10 @@
           <div>
             <h2>Absence analytics</h2>
             <p class="panel-sub">
-              Top 10 faculty with the most <strong>Absent</strong> and <strong>NoSchedule</strong>
-              marks for the selected semester.
+              Top 10 faculty by counted <strong>absent</strong> and <strong>late</strong> hours
+              for the selected semester. Each class uses its schedule time (e.g. 07:00–08:30).
+              Scans from start through the <strong>20-minute grace</strong> count as 0 late;
+              after grace, late minutes count from class start (e.g. scan 07:35 → 35 min late).
             </p>
           </div>
           <span class="term-chip" id="analytics-term-chip">…</span>
@@ -69,9 +71,9 @@
                   <th>#</th>
                   <th>Faculty</th>
                   <th>Dept</th>
-                  <th>Absent</th>
-                  <th>NoSched</th>
-                  <th>Total</th>
+                  <th>Absent hrs</th>
+                  <th>Late hrs</th>
+                  <th>Total hrs</th>
                 </tr>
               </thead>
               <tbody id="top-absent-body"></tbody>
@@ -124,6 +126,7 @@
                 <th>Expected</th>
                 <th>Actual scan</th>
                 <th>Status</th>
+                <th>Counted</th>
                 <th>Checker</th>
               </tr>
             </thead>

@@ -5,6 +5,132 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/database.php';
 
 /**
+ * Grace window after class start.
+ * Arrive within grace → 0 late minutes.
+ * Arrive after grace → late minutes count from class start (includes the grace window).
+ * Example: 07:00 start, scan 07:15 → 0; scan 07:35 → 35 late minutes.
+ */
+function attendanceGraceMinutes(): int
+{
+    $raw = getenv('ATTENDANCE_GRACE_MINUTES');
+    if ($raw === false || $raw === '') {
+        $raw = $_ENV['ATTENDANCE_GRACE_MINUTES'] ?? '20';
+    }
+    $minutes = (int) $raw;
+    return max(0, min(180, $minutes));
+}
+
+/**
+ * Scheduled class length in minutes from startTime/endTime (HH:MM or HH:MM:SS).
+ */
+function scheduleDurationMinutes(string $startTime, string $endTime): int
+{
+    $start = substr(trim($startTime), 0, 8);
+    $end = substr(trim($endTime), 0, 8);
+    if (strlen($start) === 5) {
+        $start .= ':00';
+    }
+    if (strlen($end) === 5) {
+        $end .= ':00';
+    }
+
+    $startTs = strtotime('1970-01-01 ' . $start);
+    $endTs = strtotime('1970-01-01 ' . $end);
+    if ($startTs === false || $endTs === false || $endTs <= $startTs) {
+        return 0;
+    }
+
+    return (int) (($endTs - $startTs) / 60);
+}
+
+/**
+ * Maximum countable minutes for a class slot (full scheduled duration).
+ */
+function scheduleBillableMinutes(string $startTime, string $endTime, ?int $graceMinutes = null): int
+{
+    unset($graceMinutes); // Grace only zeros late when arrival is inside the window.
+    return scheduleDurationMinutes($startTime, $endTime);
+}
+
+/**
+ * Count late / absent minutes for one attendance row using schedule times + grace.
+ *
+ * Rules:
+ * - Present / WrongRoom: 0 countable minutes
+ * - Late within grace (start → start+grace): 0 late minutes
+ * - Late after grace: minutes from class start to scan (e.g. 07:35 → 35), capped at class end
+ * - Absent / NoSchedule: full class duration (start → end)
+ *
+ * @return array{lateMinutes:int,absentMinutes:int,graceMinutes:int,slotMinutes:int,billableMinutes:int}
+ */
+function attendanceCountedMinutes(
+    string $status,
+    string $startTime,
+    string $endTime,
+    string $scanTimestamp,
+    ?int $graceMinutes = null
+): array {
+    $grace = $graceMinutes ?? attendanceGraceMinutes();
+    $slotMinutes = scheduleDurationMinutes($startTime, $endTime);
+    $result = [
+        'lateMinutes' => 0,
+        'absentMinutes' => 0,
+        'graceMinutes' => $grace,
+        'slotMinutes' => $slotMinutes,
+        'billableMinutes' => $slotMinutes,
+    ];
+
+    if ($slotMinutes <= 0) {
+        return $result;
+    }
+
+    if ($status === 'Absent' || $status === 'NoSchedule') {
+        $result['absentMinutes'] = $slotMinutes;
+        return $result;
+    }
+
+    if ($status !== 'Late') {
+        return $result;
+    }
+
+    $start = substr(trim($startTime), 0, 8);
+    $end = substr(trim($endTime), 0, 8);
+    if (strlen($start) === 5) {
+        $start .= ':00';
+    }
+    if (strlen($end) === 5) {
+        $end .= ':00';
+    }
+
+    $scanTime = date('H:i:s', strtotime($scanTimestamp) ?: time());
+    $startTs = strtotime('1970-01-01 ' . $start);
+    $endTs = strtotime('1970-01-01 ' . $end);
+    $scanTs = strtotime('1970-01-01 ' . $scanTime);
+    if ($startTs === false || $endTs === false || $scanTs === false) {
+        return $result;
+    }
+
+    $graceEndTs = $startTs + ($grace * 60);
+    if ($scanTs <= $graceEndTs) {
+        // Inside grace — forgiven (0 late minutes).
+        return $result;
+    }
+
+    // Past grace: count from class start (includes the 20 grace minutes).
+    $lateUntil = min($scanTs, $endTs);
+    $result['lateMinutes'] = max(0, (int) (($lateUntil - $startTs) / 60));
+    return $result;
+}
+
+/**
+ * Format minutes as decimal hours (e.g. 90 → 1.5).
+ */
+function minutesToHours(int $minutes): float
+{
+    return round($minutes / 60, 2);
+}
+
+/**
  * Shared read-only attendance queries (attendanceRecord ⋈ schedule ⋈ room ⋈ department ⋈ faculty).
  */
 function attendanceSelectSql(): string
@@ -50,25 +176,40 @@ function attendanceSelectSql(): string
  */
 function mapAttendanceRow(array $row): array
 {
+    $status = (string) $row['attendanceStatus'];
+    $startTime = (string) $row['startTime'];
+    $endTime = (string) $row['endTime'];
+    $timestamp = (string) $row['scanTimestamp'];
+    $counted = attendanceCountedMinutes($status, $startTime, $endTime, $timestamp);
+
     return [
         'uid' => (string) $row['attendanceUid'],
-        'status' => (string) $row['attendanceStatus'],
+        'status' => $status,
         'isOffline' => (bool) $row['isOffline'],
-        'timestamp' => (string) $row['scanTimestamp'],
+        'timestamp' => $timestamp,
         'syncedAt' => $row['syncedAt'] !== null ? (string) $row['syncedAt'] : null,
+        'counted' => [
+            'graceMinutes' => $counted['graceMinutes'],
+            'slotMinutes' => $counted['slotMinutes'],
+            'billableMinutes' => $counted['billableMinutes'],
+            'lateMinutes' => $counted['lateMinutes'],
+            'absentMinutes' => $counted['absentMinutes'],
+            'lateHours' => minutesToHours($counted['lateMinutes']),
+            'absentHours' => minutesToHours($counted['absentMinutes']),
+        ],
         'schedule' => [
             'uid' => (string) $row['scheduleUid'],
             'subjectCode' => (string) ($row['subjectCode'] ?? ''),
             'subjectName' => (string) $row['subjectName'],
             'day' => (string) $row['scheduleDay'],
-            'startTime' => substr((string) $row['startTime'], 0, 5),
-            'endTime' => substr((string) $row['endTime'], 0, 5),
+            'startTime' => substr($startTime, 0, 5),
+            'endTime' => substr($endTime, 0, 5),
             'status' => (string) $row['scheduleStatus'],
             'expectedLabel' => sprintf(
                 '%s %s–%s',
                 (string) $row['scheduleDay'],
-                substr((string) $row['startTime'], 0, 5),
-                substr((string) $row['endTime'], 0, 5)
+                substr($startTime, 0, 5),
+                substr($endTime, 0, 5)
             ),
         ],
         'room' => [
@@ -150,32 +291,38 @@ function fetchAttendanceReview(?string $departmentId, ?string $dateFrom, ?string
 }
 
 /**
- * Top faculty by absence-related scan counts for a semester.
- * Counts Absent + NoSchedule as absence events (WrongRoom excluded).
+ * Top faculty by counted absent/late hours for a semester.
+ *
+ * Hours use each schedule's startTime–endTime. Late within the grace window
+ * (default 20 min) counts as 0; late after grace counts from class start
+ * (scan 07:35 → 35 minutes). Absent/NoSchedule uses the full class duration.
+ * WrongRoom is excluded from absence/late hour totals.
  *
  * @return list<array<string,mixed>>
  */
 function fetchTopAbsentFaculty(int $academicYear, string $semester, ?string $departmentId = null, int $limit = 10): array
 {
     $limit = max(1, min(50, $limit));
+    $grace = attendanceGraceMinutes();
 
     $sql = 'SELECT
+                ar.status,
+                ar.timestamp,
+                s.startTime,
+                s.endTime,
                 f.uid AS facultyId,
                 f.firstName,
                 f.lastName,
                 f.email,
                 d.uid AS departmentUid,
-                d.name AS departmentName,
-                SUM(CASE WHEN ar.status = \'Absent\' THEN 1 ELSE 0 END) AS absentCount,
-                SUM(CASE WHEN ar.status = \'NoSchedule\' THEN 1 ELSE 0 END) AS noScheduleCount,
-                SUM(CASE WHEN ar.status IN (\'Absent\', \'NoSchedule\') THEN 1 ELSE 0 END) AS totalAbsent
+                d.name AS departmentName
             FROM attendanceRecord ar
             INNER JOIN schedule s ON s.uid = ar.scheduleId
             INNER JOIN `user` f ON f.uid = s.facultyId
             INNER JOIN department d ON d.uid = s.departmentId
             WHERE s.academicYear = :academicYear
               AND s.semester = :semester
-              AND ar.status IN (\'Absent\', \'NoSchedule\')';
+              AND ar.status IN (\'Absent\', \'NoSchedule\', \'Late\')';
 
     $params = [
         ':academicYear' => $academicYear,
@@ -187,17 +334,76 @@ function fetchTopAbsentFaculty(int $academicYear, string $semester, ?string $dep
         $params[':departmentId'] = $departmentId;
     }
 
-    $sql .= ' GROUP BY f.uid, f.firstName, f.lastName, f.email, d.uid, d.name
-              HAVING totalAbsent > 0
-              ORDER BY totalAbsent DESC, f.lastName ASC, f.firstName ASC
-              LIMIT ' . $limit;
+    $sql .= ' ORDER BY f.lastName ASC, f.firstName ASC, ar.timestamp ASC';
 
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
 
+    /** @var array<string,array<string,mixed>> $byFaculty */
+    $byFaculty = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $fid = (string) $row['facultyId'];
+        if (!isset($byFaculty[$fid])) {
+            $byFaculty[$fid] = [
+                'facultyId' => $fid,
+                'firstName' => (string) $row['firstName'],
+                'lastName' => (string) $row['lastName'],
+                'email' => (string) $row['email'],
+                'departmentUid' => (string) $row['departmentUid'],
+                'departmentName' => (string) $row['departmentName'],
+                'absentCount' => 0,
+                'noScheduleCount' => 0,
+                'lateCount' => 0,
+                'absentMinutes' => 0,
+                'lateMinutes' => 0,
+            ];
+        }
+
+        $status = (string) $row['status'];
+        $counted = attendanceCountedMinutes(
+            $status,
+            (string) $row['startTime'],
+            (string) $row['endTime'],
+            (string) $row['timestamp'],
+            $grace
+        );
+
+        if ($status === 'Absent') {
+            $byFaculty[$fid]['absentCount']++;
+            $byFaculty[$fid]['absentMinutes'] += $counted['absentMinutes'];
+        } elseif ($status === 'NoSchedule') {
+            $byFaculty[$fid]['noScheduleCount']++;
+            $byFaculty[$fid]['absentMinutes'] += $counted['absentMinutes'];
+        } elseif ($status === 'Late') {
+            $byFaculty[$fid]['lateCount']++;
+            $byFaculty[$fid]['lateMinutes'] += $counted['lateMinutes'];
+        }
+    }
+
+    $ranked = array_values($byFaculty);
+    usort($ranked, static function (array $a, array $b): int {
+        $aTotal = $a['absentMinutes'] + $a['lateMinutes'];
+        $bTotal = $b['absentMinutes'] + $b['lateMinutes'];
+        if ($aTotal !== $bTotal) {
+            return $bTotal <=> $aTotal;
+        }
+        if ($a['absentMinutes'] !== $b['absentMinutes']) {
+            return $b['absentMinutes'] <=> $a['absentMinutes'];
+        }
+        return [$a['lastName'], $a['firstName']] <=> [$b['lastName'], $b['firstName']];
+    });
+
+    $ranked = array_values(array_filter(
+        $ranked,
+        static fn (array $row): bool => ($row['absentMinutes'] + $row['lateMinutes']) > 0
+    ));
+    $ranked = array_slice($ranked, 0, $limit);
+
     $rows = [];
     $rank = 1;
-    foreach ($stmt->fetchAll() as $row) {
+    foreach ($ranked as $row) {
+        $absentHours = minutesToHours((int) $row['absentMinutes']);
+        $lateHours = minutesToHours((int) $row['lateMinutes']);
         $rows[] = [
             'rank' => $rank++,
             'faculty' => [
@@ -213,7 +419,14 @@ function fetchTopAbsentFaculty(int $academicYear, string $semester, ?string $dep
             ],
             'absentCount' => (int) $row['absentCount'],
             'noScheduleCount' => (int) $row['noScheduleCount'],
-            'totalAbsent' => (int) $row['totalAbsent'],
+            'lateCount' => (int) $row['lateCount'],
+            'totalAbsent' => (int) $row['absentCount'] + (int) $row['noScheduleCount'],
+            'absentMinutes' => (int) $row['absentMinutes'],
+            'lateMinutes' => (int) $row['lateMinutes'],
+            'absentHours' => $absentHours,
+            'lateHours' => $lateHours,
+            'totalHours' => minutesToHours((int) $row['absentMinutes'] + (int) $row['lateMinutes']),
+            'graceMinutes' => $grace,
         ];
     }
 
