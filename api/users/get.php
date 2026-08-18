@@ -9,7 +9,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-requireRoles(['Dean']);
+$actor = requireRoles(['Dean', 'HR']);
 
 $userId = isset($_GET['uid']) ? trim((string) $_GET['uid']) : '';
 if ($userId === '') {
@@ -19,6 +19,12 @@ if ($userId === '') {
 $user = fetchManagedUserById($userId);
 if ($user === null) {
     jsonError('User not found.', 404);
+}
+
+try {
+    assertActorMayManageTarget($actor, $user);
+} catch (InvalidArgumentException $e) {
+    jsonError($e->getMessage(), 403);
 }
 
 jsonSuccess(['user' => $user]);

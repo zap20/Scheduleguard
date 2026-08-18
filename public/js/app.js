@@ -25,6 +25,7 @@
       { href: "audit.html", label: "Audit" },
     ],
     HR: [
+      { href: "users.html", label: "Users" },
       { href: "attendance-hr.html", label: "Attendance review" },
       { href: "blocking.html", label: "Blocking list" },
     ],
@@ -772,6 +773,13 @@
     document.getElementById("user-role").textContent = user.role;
     document.getElementById("user-email").textContent = user.email;
     renderNav(user.role);
+
+    if (
+      window.ScheduleGuardShell &&
+      typeof window.ScheduleGuardShell.refreshScheduleNavSummaries === "function"
+    ) {
+      await window.ScheduleGuardShell.refreshScheduleNavSummaries(user.role);
+    }
 
     if (user.role === "Dean" && result.data.dashboard && result.data.dashboard.period) {
       selectedPeriod = result.data.dashboard.period.period || selectedPeriod;

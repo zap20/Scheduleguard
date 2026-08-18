@@ -3,6 +3,10 @@
 
   const Att = window.ScheduleGuardAttendance;
   const Api = window.ScheduleGuardApi;
+
+  function compareCardLabels(a, b) {
+    return window.ScheduleGrid.compareCardLabels(a, b);
+  }
   const user = await Att.requireRole(["Dean"]);
   if (!user) return;
 
@@ -133,7 +137,7 @@
         return card.rows.length > 0;
       })
       .sort(function (a, b) {
-        return a.title.localeCompare(b.title);
+        return compareCardLabels(a.title, b.title);
       });
   }
 
@@ -210,6 +214,9 @@
         return groups[key].length > 0;
       })
       .map(function (key) {
+        groups[key].sort(function (a, b) {
+          return compareCardLabels(a.title, b.title);
+        });
         return (
           '<section class="room-grid-section">' +
           '<h3 class="room-grid-section__label">' +
@@ -320,6 +327,16 @@
         termChip.textContent = term.label || "Sem " + term.semester;
       }
       document.getElementById("result-count").textContent = String(allRows.length);
+      const loadChip = document.getElementById("tbf-load-chip");
+      const summary = result.data.tbfSummary;
+      if (loadChip && summary && summary.totalLoad != null) {
+        const load = Math.round(Number(summary.totalLoad) * 100) / 100;
+        loadChip.textContent = load + " load left";
+        loadChip.title =
+          load + " unassigned load · " +
+          (summary.offeringCount != null ? summary.offeringCount : "—") +
+          " offering(s) · contact hours ÷ 3";
+      }
       showCards();
       renderCards();
     } catch (err) {

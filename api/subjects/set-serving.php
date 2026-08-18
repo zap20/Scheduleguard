@@ -28,11 +28,10 @@ if ($existing === null) {
     jsonError('Subject not found.', 404);
 }
 
-if ($user['role'] === 'ProgramHead') {
-    $ownDept = userDepartmentId($user['uid']);
-    if ($ownDept === null || $ownDept !== $existing['departmentId']) {
-        jsonError('Program Head may only edit subjects in their department.', 403);
-    }
+try {
+    assertSubjectOwnedByUserDepartment($user, $existing);
+} catch (InvalidArgumentException $e) {
+    jsonError($e->getMessage(), 403);
 }
 
 if (strcasecmp((string) $existing['status'], SUBJECT_STATUS_ARCHIVED) === 0) {

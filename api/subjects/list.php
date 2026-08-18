@@ -20,6 +20,8 @@ $subjectType = isset($_GET['subjectType']) ? trim((string) $_GET['subjectType'])
 $servingDepartmentId = isset($_GET['servingDepartmentId'])
     ? trim((string) $_GET['servingDepartmentId'])
     : '';
+$curriculumYearRaw = isset($_GET['curriculumYear']) ? trim((string) $_GET['curriculumYear']) : '';
+$curriculumYear = $curriculumYearRaw !== '' ? (int) $curriculumYearRaw : null;
 
 if ($status === 'all') {
     $status = null;
@@ -28,13 +30,11 @@ if ($subjectType === 'all') {
     $subjectType = '';
 }
 
-if ($user['role'] === 'ProgramHead') {
-    $ownDept = userDepartmentId($user['uid']);
-    if ($ownDept === null) {
-        jsonError('Program Head has no assigned department.', 403);
-    }
-    $departmentId = $ownDept;
+$scopedDept = resolveOwnedSubjectDepartmentScope($user, $departmentId);
+if (($user['role'] ?? '') === 'ProgramHead' && $scopedDept === null) {
+    jsonError('Program Head has no assigned department.', 403);
 }
+$departmentId = $scopedDept ?? '';
 
 try {
     $subjects = fetchSubjects(
@@ -43,7 +43,7 @@ try {
         $semester !== '' ? $semester : null,
         $status,
         $search,
-        null,
+        $curriculumYear,
         $subjectType !== '' ? $subjectType : null,
         false,
         $servingDepartmentId !== '' ? $servingDepartmentId : null
@@ -61,6 +61,7 @@ jsonSuccess([
         'subjectType' => $subjectType !== '' ? $subjectType : null,
         'servingDepartmentId' => $servingDepartmentId !== '' ? $servingDepartmentId : null,
         'status' => $status,
+        'curriculumYear' => $curriculumYear,
         'q' => $search !== '' ? $search : null,
     ],
     'meta' => [

@@ -30,6 +30,7 @@
     ],
     HR: [
       { href: "app.html", label: "Dashboard" },
+      { href: "users.html", label: "Users" },
       { href: "attendance-hr.html", label: "Attendance review" },
       { href: "blocking.html", label: "Blocking list" },
     ],
@@ -158,6 +159,87 @@
     applyTheme(currentTheme());
   }
 
+  function formatLoadChip(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "0 load";
+    return (Math.round(n * 100) / 100) + " load left";
+  }
+
+  function formatNoLoadChip(count) {
+    const n = Number(count);
+    if (!Number.isFinite(n) || n <= 0) return "0 no load";
+    return n + " no load";
+  }
+
+  function getSessionRole() {
+    if (!window.ScheduleGuardApi || typeof window.ScheduleGuardApi.getStoredUser !== "function") {
+      return null;
+    }
+    const user = window.ScheduleGuardApi.getStoredUser();
+    return user && user.role ? user.role : null;
+  }
+
+  async function decorateScheduleNavSummaries(role) {
+    role = role || getSessionRole();
+    if (role !== "Dean" && role !== "ProgramHead") return;
+    if (!window.ScheduleGuardApi) return;
+
+    const [tbfResult, facultyResult] = await Promise.allSettled([
+      window.ScheduleGuardApi.api("/schedules/tbf-summary.php", { method: "GET" }),
+      window.ScheduleGuardApi.api("/schedules/faculty-no-load-summary.php", { method: "GET" }),
+    ]);
+
+    if (tbfResult.status === "fulfilled") {
+      const tbfLoad =
+        tbfResult.value.data &&
+        tbfResult.value.data.summary &&
+        tbfResult.value.data.summary.totalLoad;
+      const tbfLink = document.querySelector('.drawer-sublink[href="tbf-schedule-dean.html"]');
+      if (tbfLink && tbfLoad != null) {
+        tbfLink.innerHTML =
+          'TBF (unassigned) <span class="nav-load-left nav-badge-tbf">' +
+          formatLoadChip(tbfLoad) +
+          "</span>";
+      }
+    }
+
+    if (facultyResult.status === "fulfilled") {
+      const noLoadCount =
+        facultyResult.value.data &&
+        facultyResult.value.data.summary &&
+        facultyResult.value.data.summary.noLoadCount != null
+          ? facultyResult.value.data.summary.noLoadCount
+          : null;
+      const facultyLink = document.querySelector(
+        '.drawer-sublink[href="faculty-schedule-dean.html"]'
+      );
+      if (facultyLink && noLoadCount != null) {
+        facultyLink.innerHTML =
+          'Faculty schedule <span class="nav-load-left nav-badge-no-load">' +
+          formatNoLoadChip(noLoadCount) +
+          "</span>";
+      }
+    }
+  }
+
+  function bindScheduleDrawerToggle(nav, role) {
+    nav.querySelectorAll(".drawer-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const group = btn.closest(".drawer-group");
+        if (!group) return;
+        const willOpen = !group.classList.contains("is-open");
+        group.classList.toggle("is-open", willOpen);
+        btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        if (
+          willOpen &&
+          group.querySelector('.drawer-sublink[href="faculty-schedule-dean.html"]')
+        ) {
+          decorateScheduleNavSummaries(role);
+        }
+      });
+    });
+  }
+
   function renderNav(role) {
     const nav = document.getElementById("drawer-nav");
     if (!nav) return;
@@ -198,7 +280,7 @@
             '" aria-expanded="' +
             (groupActive ? "true" : "false") +
             '">' +
-            '<span>' +
+            "<span>" +
             link.label +
             "</span>" +
             '<span class="drawer-caret" aria-hidden="true"></span>' +
@@ -223,15 +305,7 @@
       })
       .join("");
 
-    nav.querySelectorAll(".drawer-toggle").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        const group = btn.closest(".drawer-group");
-        if (!group) return;
-        const willOpen = !group.classList.contains("is-open");
-        group.classList.toggle("is-open", willOpen);
-        btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
-      });
-    });
+    bindScheduleDrawerToggle(nav, role);
   }
 
   async function bindLogout(button) {
@@ -267,14 +341,21 @@
         label.textContent = user.firstName + " " + user.lastName + " · " + user.role;
       }
       renderNav(user.role);
+      await decorateScheduleNavSummaries(user.role);
       bindLogout(document.getElementById("drawer-logout-btn"));
     } catch {
-      /* page scripts handle auth redirects */
+      const stored = getSessionRole();
+      if (stored) {
+        renderNav(stored);
+        await decorateScheduleNavSummaries(stored);
+        bindLogout(document.getElementById("drawer-logout-btn"));
+      }
     }
   }
 
   window.ScheduleGuardShell = {
     init: initShell,
+    refreshScheduleNavSummaries: decorateScheduleNavSummaries,
     modules: MODULES,
     applyTheme: applyTheme,
     toggleTheme: toggleTheme,

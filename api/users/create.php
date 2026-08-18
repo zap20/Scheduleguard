@@ -9,10 +9,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     jsonError('Method not allowed.', 405);
 }
 
-$actor = requireRoles(['Dean']);
+$actor = requireRoles(['Dean', 'HR']);
 $body = requestBody();
 
+if (!actorManagesAllUsers($actor)) {
+    $ownDept = userDepartmentId($actor['uid']);
+    if ($ownDept === null) {
+        jsonError('Dean has no assigned department.', 403);
+    }
+    $body['departmentId'] = $ownDept;
+}
+
 try {
+    assertActorMayAssignRole($actor, trim((string) ($body['role'] ?? '')));
     $user = createManagedUser($body);
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);

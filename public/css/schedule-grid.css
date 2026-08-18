@@ -122,6 +122,47 @@ html:not([data-theme]) .schedule-grid thead .sg-time {
   border-left-color: var(--danger, #b42318);
 }
 
+.schedule-grid .sg-block-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.2rem;
+  max-width: 100%;
+}
+
+.schedule-grid .sg-block-item + .sg-block-item,
+.schedule-grid .sg-block-label + .sg-block-item {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
+}
+
+.schedule-grid .sg-block-item .sg-block-label.is-action {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.schedule-grid .sg-block-remove {
+  appearance: none;
+  flex: 0 0 auto;
+  border: 0;
+  margin: 0;
+  padding: 0 0.22rem;
+  line-height: 1;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--danger, #b42318);
+  background: color-mix(in srgb, var(--danger, #b42318) 10%, transparent);
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.schedule-grid-wrap.is-clickable .sg-block-remove:hover,
+.schedule-grid-wrap.is-clickable .sg-block-remove:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--danger, #b42318) 55%, transparent);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--danger, #b42318) 18%, transparent);
+}
+
 .schedule-grid .sg-block-label {
   display: block;
   font-weight: 700;
@@ -257,6 +298,14 @@ html:not([data-theme]) .schedule-grid thead .sg-time {
 
 .schedule-pick-card--underload {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+
+.schedule-pick-card--part-time .schedule-pick-card__eyebrow {
+  color: color-mix(in srgb, var(--accent) 85%, var(--ink-soft));
+}
+
+.schedule-pick-card--full-time .schedule-pick-card__eyebrow {
+  color: color-mix(in srgb, var(--brand, #0b6e6e) 75%, var(--ink-soft));
 }
 
 .schedule-pick-card__eyebrow {

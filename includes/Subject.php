@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/database.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/Department.php';
+require_once __DIR__ . '/Term.php';
 
 const SUBJECT_STATUS_ACTIVE = 'Active';
 const SUBJECT_STATUS_ARCHIVED = 'Archived';
@@ -309,8 +310,7 @@ function validateSubjectInput(array $input, bool $requireAll = true): array
     $departmentId = trim((string) ($input['departmentId'] ?? ''));
     $servingDepartmentId = trim((string) ($input['servingDepartmentId'] ?? ''));
     $servingDepartmentName = trim((string) ($input['servingDepartmentName'] ?? ''));
-    $code = strtoupper(trim((string) ($input['code'] ?? '')));
-    $code = preg_replace('/\s+/', ' ', $code) ?? $code;
+    $code = normalizeSubjectCode((string) ($input['code'] ?? ''));
     $title = trim((string) ($input['title'] ?? ''));
     $yearLevel = trim((string) ($input['yearLevel'] ?? ''));
     $semester = trim((string) ($input['semester'] ?? ''));
@@ -336,8 +336,9 @@ function validateSubjectInput(array $input, bool $requireAll = true): array
 
     $lectureHours = isset($input['lectureHours']) ? (float) $input['lectureHours'] : 0.0;
     $labHours = isset($input['labHours']) ? (float) $input['labHours'] : 0.0;
-    // labSessionCount kept in DB for compatibility; schedule gen always splits lab ÷2.
-    $labSessionCount = 1;
+    $labSessionCount = isset($input['labSessionCount'])
+        ? max(0, (int) $input['labSessionCount'])
+        : 1;
 
     if ($requireAll) {
         $missing = [];
@@ -345,7 +346,6 @@ function validateSubjectInput(array $input, bool $requireAll = true): array
             [
                 'departmentId' => $departmentId,
                 'code' => $code,
-                'title' => $title,
                 'yearLevel' => $yearLevel,
                 'semester' => $semester,
             ] as $field => $value
@@ -390,8 +390,11 @@ function validateSubjectInput(array $input, bool $requireAll = true): array
         throw new InvalidArgumentException('labHours must be between 0 and 12.');
     }
     if ($lectureHours <= 0 && $labHours <= 0) {
-        // Allow legacy preferredRoomType-only create; default 1.5h lecture.
-        $lectureHours = 1.5;
+        $hoursProvided = array_key_exists('lectureHours', $input)
+            || array_key_exists('labHours', $input);
+        if (!$hoursProvided) {
+            $lectureHours = 1.5;
+        }
     }
 
     $preferredRoomType = strtoupper(trim((string) ($input['preferredRoomType'] ?? '')));
@@ -565,6 +568,9 @@ function updateSubject(string $subjectId, array $input): array
         'labHours' => array_key_exists('labHours', $input)
             ? $input['labHours']
             : $existing['labHours'],
+        'labSessionCount' => array_key_exists('labSessionCount', $input)
+            ? $input['labSessionCount']
+            : $existing['labSessionCount'],
         'preferredRoomType' => array_key_exists('preferredRoomType', $input)
             ? $input['preferredRoomType']
             : $existing['preferredRoomType'],
@@ -648,6 +654,33 @@ function archiveSubject(string $subjectId): array
 }
 
 /**
+ * @return string|null subject uid
+ */
+function findSubjectUidByCode(string $departmentId, string $code, ?int $curriculumYear = null): ?string
+{
+    $code = normalizeSubjectCode($code);
+    if ($code === '' || $departmentId === '') {
+        return null;
+    }
+    $sql = 'SELECT uid FROM subject
+            WHERE departmentId = :departmentId
+              AND UPPER(code) = :code';
+    $params = [
+        ':departmentId' => $departmentId,
+        ':code' => $code,
+    ];
+    if ($curriculumYear !== null) {
+        $sql .= ' AND curriculumYear = :curriculumYear';
+        $params[':curriculumYear'] = $curriculumYear;
+    }
+    $sql .= ' ORDER BY curriculumYear DESC LIMIT 1';
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $uid = $stmt->fetchColumn();
+    return $uid ? (string) $uid : null;
+}
+
+/**
  * Find active subject by department + code, or create a stub curriculum row.
  * Used by schedule import / legacy bridges.
  *
@@ -662,8 +695,8 @@ function findOrCreateSubjectByCode(
     float $units = 3.0,
     ?int $curriculumYear = null
 ): array {
-    $code = strtoupper(trim(preg_replace('/\s+/', ' ', $code) ?? $code));
-    $curriculumYear = $curriculumYear ?? (int) date('Y');
+    $code = normalizeSubjectCode($code);
+    $curriculumYear = $curriculumYear ?? currentTermWindow()['academicYear'];
     $stmt = db()->prepare(
         'SELECT uid FROM subject
          WHERE departmentId = :departmentId
@@ -687,15 +720,15 @@ function findOrCreateSubjectByCode(
     return createSubject([
         'departmentId' => $departmentId,
         'code' => $code,
-        'title' => $title !== '' ? $title : $code,
+        'title' => '',
         'yearLevel' => in_array($yearLevel, SUBJECT_YEAR_LEVELS, true) ? $yearLevel : '1st Year',
         'semester' => in_array($semester, SUBJECT_SEMESTERS, true) ? $semester : '1st Semester',
         'curriculumYear' => $curriculumYear,
         'units' => $units,
         'subjectType' => 'MAJOR',
-        'lectureHours' => 1.5,
+        'lectureHours' => 0,
         'labHours' => 0,
-        'labSessionCount' => 1,
+        'labSessionCount' => 0,
     ]);
 }
 
@@ -726,4 +759,439 @@ function scheduleSemesterFromCurriculum(string $semester): string
         return 'Summer';
     }
     return '1';
+}
+
+/**
+ * After block import, set each subject's lecture/lab hours from LEC/LAB meeting totals.
+ *
+ * @param array<string,array{lectureHours:float,labHours:float,labSessionCount:int}> $hoursByCode
+ */
+function applySubjectCatalogHoursFromImport(
+    string $departmentId,
+    array $hoursByCode,
+    int $curriculumYear
+): int {
+    $updated = 0;
+    foreach ($hoursByCode as $code => $hours) {
+        $code = strtoupper(trim((string) $code));
+        $stmt = db()->prepare(
+            'SELECT uid FROM subject
+             WHERE departmentId = :departmentId
+               AND UPPER(code) = :code
+               AND curriculumYear = :curriculumYear
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':departmentId' => $departmentId,
+            ':code' => $code,
+            ':curriculumYear' => $curriculumYear,
+        ]);
+        $uid = $stmt->fetchColumn();
+        if (!$uid) {
+            $fallback = db()->prepare(
+                'SELECT uid FROM subject
+                 WHERE departmentId = :departmentId
+                   AND UPPER(code) = :code
+                 ORDER BY curriculumYear DESC
+                 LIMIT 1'
+            );
+            $fallback->execute([
+                ':departmentId' => $departmentId,
+                ':code' => $code,
+            ]);
+            $uid = $fallback->fetchColumn();
+        }
+        if (!$uid) {
+            continue;
+        }
+
+        $lec = (float) ($hours['lectureHours'] ?? 0);
+        $lab = (float) ($hours['labHours'] ?? 0);
+        $labSessions = (int) ($hours['labSessionCount'] ?? 0);
+        updateSubject((string) $uid, [
+            'lectureHours' => $lec,
+            'labHours' => $lab,
+            'labSessionCount' => $labSessions > 0 ? $labSessions : 0,
+        ]);
+        $updated++;
+    }
+
+    return $updated;
+}
+
+/**
+ * Curriculum years for a department, newest first.
+ *
+ * @return list<array{curriculumYear:int,subjectCount:int,majorCount:int,minorCount:int,lastCreatedAt:?string}>
+ */
+function fetchCurriculumSummaries(?string $departmentId, ?string $status = SUBJECT_STATUS_ACTIVE): array
+{
+    $sql = 'SELECT
+                s.curriculumYear,
+                COUNT(*) AS subjectCount,
+                SUM(CASE WHEN s.subjectType = \'MAJOR\' THEN 1 ELSE 0 END) AS majorCount,
+                SUM(CASE WHEN s.subjectType = \'MINOR\' THEN 1 ELSE 0 END) AS minorCount,
+                MAX(s.createdAt) AS lastCreatedAt
+            FROM subject s
+            WHERE 1 = 1';
+    $params = [];
+    if ($departmentId !== null && $departmentId !== '') {
+        $sql .= ' AND s.departmentId = :departmentId';
+        $params[':departmentId'] = $departmentId;
+    }
+    if ($status !== null && $status !== '') {
+        $sql .= ' AND s.status = :status';
+        $params[':status'] = $status;
+    }
+    $sql .= ' GROUP BY s.curriculumYear ORDER BY s.curriculumYear DESC';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $rows = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[] = [
+            'curriculumYear' => (int) $row['curriculumYear'],
+            'subjectCount' => (int) $row['subjectCount'],
+            'majorCount' => (int) $row['majorCount'],
+            'minorCount' => (int) $row['minorCount'],
+            'lastCreatedAt' => $row['lastCreatedAt'] !== null ? (string) $row['lastCreatedAt'] : null,
+        ];
+    }
+    return $rows;
+}
+
+/**
+ * Compare two curriculum years by subject code.
+ *
+ * @return array{
+ *   fromYear:int,
+ *   toYear:int,
+ *   added:list<array<string,mixed>>,
+ *   removed:list<array<string,mixed>>,
+ *   changed:list<array{code:string,title:string,changes:list<string>}>
+ * }
+ */
+function compareCurriculumYears(
+    string $departmentId,
+    int $fromYear,
+    int $toYear,
+    ?string $status = SUBJECT_STATUS_ACTIVE
+): array {
+    $older = fetchSubjects($departmentId, null, null, $status, '', $fromYear);
+    $newer = fetchSubjects($departmentId, null, null, $status, '', $toYear);
+
+    $byCode = static function (array $list): array {
+        $map = [];
+        foreach ($list as $row) {
+            $map[strtoupper((string) $row['code'])] = $row;
+        }
+        return $map;
+    };
+    $oldMap = $byCode($older);
+    $newMap = $byCode($newer);
+
+    $added = [];
+    $removed = [];
+    $changed = [];
+
+    foreach ($newMap as $code => $row) {
+        if (!isset($oldMap[$code])) {
+            $added[] = $row;
+            continue;
+        }
+        $prev = $oldMap[$code];
+        $diffs = [];
+        foreach (['title', 'yearLevel', 'semester', 'units', 'lectureHours', 'labHours', 'subjectType'] as $field) {
+            $a = (string) ($prev[$field] ?? '');
+            $b = (string) ($row[$field] ?? '');
+            if ($a !== $b) {
+                $diffs[] = $field . ': ' . ($a !== '' ? $a : '—') . ' → ' . ($b !== '' ? $b : '—');
+            }
+        }
+        if ($diffs !== []) {
+            $changed[] = [
+                'code' => (string) $row['code'],
+                'title' => (string) ($row['title'] ?? ''),
+                'changes' => $diffs,
+            ];
+        }
+    }
+    foreach ($oldMap as $code => $row) {
+        if (!isset($newMap[$code])) {
+            $removed[] = $row;
+        }
+    }
+
+    return [
+        'fromYear' => $fromYear,
+        'toYear' => $toYear,
+        'added' => $added,
+        'removed' => $removed,
+        'changed' => $changed,
+    ];
+}
+
+/**
+ * @return list<array<string,string>>
+ */
+function parseCurriculumCsv(string $path): array
+{
+    $handle = fopen($path, 'rb');
+    if ($handle === false) {
+        throw new RuntimeException('Unable to read CSV file.');
+    }
+
+    $first = fgets($handle);
+    if ($first === false) {
+        fclose($handle);
+        throw new InvalidArgumentException('CSV file is empty. Use the curriculum template.');
+    }
+    $first = preg_replace('/^\xEF\xBB\xBF/', '', $first) ?? $first;
+    $delimiter = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
+    rewind($handle);
+
+    $header = null;
+    $rows = [];
+    $line = 0;
+
+    while (($data = fgetcsv($handle, 0, $delimiter, '"', '\\')) !== false) {
+        $line++;
+        if ($data === [null] || $data === false) {
+            continue;
+        }
+        if (isset($data[0])) {
+            $data[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $data[0]) ?? (string) $data[0];
+        }
+        if ($header === null) {
+            $header = array_map(static fn($h) => strtolower(trim((string) $h)), $data);
+            continue;
+        }
+        if (count(array_filter($data, static fn($v) => trim((string) $v) !== '')) === 0) {
+            continue;
+        }
+        $assoc = [];
+        foreach ($header as $i => $key) {
+            $assoc[$key] = trim((string) ($data[$i] ?? ''));
+        }
+        $assoc['_rowNumber'] = (string) $line;
+        $rows[] = $assoc;
+    }
+    fclose($handle);
+
+    if ($header === null) {
+        throw new InvalidArgumentException('CSV file is empty. Use the curriculum template.');
+    }
+
+    return $rows;
+}
+
+function curriculumCsvCell(array $row, array $keys): string
+{
+    foreach ($keys as $key) {
+        if (isset($row[$key]) && trim((string) $row[$key]) !== '') {
+            return trim((string) $row[$key]);
+        }
+    }
+    return '';
+}
+
+function normalizeCurriculumYearLevel(string $value): string
+{
+    $v = strtolower(trim($value));
+    $v = preg_replace('/\s+/', ' ', $v) ?? $v;
+    if (in_array($v, ['1', '1st', 'first', '1st year', 'year 1'], true)) {
+        return '1st Year';
+    }
+    if (in_array($v, ['2', '2nd', 'second', '2nd year', 'year 2'], true)) {
+        return '2nd Year';
+    }
+    if (in_array($v, ['3', '3rd', 'third', '3rd year', 'year 3'], true)) {
+        return '3rd Year';
+    }
+    if (in_array($v, ['4', '4th', 'fourth', '4th year', 'year 4'], true)) {
+        return '4th Year';
+    }
+    return $value;
+}
+
+function normalizeCurriculumSemesterLabel(string $value): string
+{
+    $v = strtolower(trim($value));
+    if (in_array($v, ['1', '1st', 'first', '1st semester', 'sem 1'], true)) {
+        return '1st Semester';
+    }
+    if (in_array($v, ['2', '2nd', 'second', '2nd semester', 'sem 2'], true)) {
+        return '2nd Semester';
+    }
+    if (in_array($v, ['summer', 'midyear', 'mid-year'], true)) {
+        return 'Summer';
+    }
+    return $value;
+}
+
+/**
+ * Import curriculum subjects from parsed CSV rows.
+ * Existing codes are updated (title, hours, units) instead of skipped.
+ *
+ * @param list<array<string,string>> $rows
+ * @return array{created:int,updated:int,skipped:int,failed:list<array{row:int,error:string,code:string}>}
+ */
+function importCurriculumSubjectsFromRows(
+    array $rows,
+    string $departmentId,
+    ?int $curriculumYearOverride = null
+): array {
+    $created = 0;
+    $updated = 0;
+    $skipped = 0;
+    $failed = [];
+
+    foreach ($rows as $row) {
+        $line = (int) ($row['_rowNumber'] ?? 0);
+        $code = normalizeSubjectCode(
+            curriculumCsvCell($row, ['code', 'subjectcode', 'subject_code', 'subject code'])
+        );
+        if ($code === '') {
+            $failed[] = ['row' => $line, 'error' => 'code is required.', 'code' => ''];
+            continue;
+        }
+
+        $yearRaw = curriculumCsvCell($row, ['curriculumyear', 'curriculum_year', 'curriculum year']);
+        $curriculumYear = $curriculumYearOverride ?? ($yearRaw !== '' ? (int) $yearRaw : (int) date('Y'));
+        $title = curriculumCsvCell($row, ['title', 'name', 'subjectname', 'subject_name', 'subject title']);
+        $yearLevel = normalizeCurriculumYearLevel(
+            curriculumCsvCell($row, ['yearlevel', 'year_level', 'year level', 'yearlevelname'])
+        );
+        $semester = normalizeCurriculumSemesterLabel(
+            curriculumCsvCell($row, ['semester', 'sem', 'term'])
+        );
+        $unitsCell = curriculumCsvCell($row, ['units', 'unit']);
+        $lecCell = curriculumCsvCell($row, ['lecturehours', 'lecture_hours', 'lecture hours', 'lecture', 'lec']);
+        $labCell = curriculumCsvCell($row, ['labhours', 'lab_hours', 'lab hours', 'lab']);
+        $typeCell = strtoupper(curriculumCsvCell($row, ['subjecttype', 'subject_type', 'type']));
+        $serves = curriculumCsvCell($row, [
+            'servingdepartment',
+            'serving_department',
+            'serves',
+            'serving department',
+        ]);
+
+        $uid = findSubjectUidByCode($departmentId, $code, $curriculumYear)
+            ?? findSubjectUidByCode($departmentId, $code, null);
+
+        try {
+            if ($uid) {
+                $patch = [];
+                if ($title !== '') {
+                    $patch['title'] = $title;
+                }
+                if ($yearLevel !== '' && in_array($yearLevel, SUBJECT_YEAR_LEVELS, true)) {
+                    $patch['yearLevel'] = $yearLevel;
+                }
+                if ($semester !== '' && in_array($semester, SUBJECT_SEMESTERS, true)) {
+                    $patch['semester'] = $semester;
+                }
+                if ($unitsCell !== '') {
+                    $patch['units'] = (float) $unitsCell;
+                }
+                if ($lecCell !== '') {
+                    $patch['lectureHours'] = (float) $lecCell;
+                }
+                if ($labCell !== '') {
+                    $patch['labHours'] = (float) $labCell;
+                }
+                if ($typeCell !== '') {
+                    $patch['subjectType'] = $typeCell;
+                }
+                if ($serves !== '') {
+                    $patch['servingDepartmentName'] = $serves;
+                }
+                if ($patch === []) {
+                    $skipped++;
+                    continue;
+                }
+                updateSubject($uid, $patch);
+                $updated++;
+                continue;
+            }
+
+            $input = [
+                'departmentId' => $departmentId,
+                'code' => $code,
+                'title' => $title,
+                'yearLevel' => $yearLevel,
+                'semester' => $semester,
+                'curriculumYear' => $curriculumYear,
+                'units' => $unitsCell !== '' ? (float) $unitsCell : 3.0,
+                'lectureHours' => $lecCell !== '' ? (float) $lecCell : 0.0,
+                'labHours' => $labCell !== '' ? (float) $labCell : 0.0,
+                'subjectType' => $typeCell !== '' ? $typeCell : 'MAJOR',
+                'servingDepartmentName' => $serves,
+            ];
+            if ($input['subjectType'] === '' && $serves === '') {
+                $input['subjectType'] = 'MAJOR';
+            }
+            createSubject($input);
+            $created++;
+        } catch (InvalidArgumentException $e) {
+            $failed[] = ['row' => $line, 'error' => $e->getMessage(), 'code' => $code];
+        } catch (Throwable $e) {
+            $failed[] = ['row' => $line, 'error' => $e->getMessage(), 'code' => $code];
+        }
+    }
+
+    return [
+        'created' => $created,
+        'updated' => $updated,
+        'skipped' => $skipped,
+        'failed' => $failed,
+    ];
+}
+
+function csvEscapeCell(string $value): string
+{
+    if (strpbrk($value, ",\"\n\r") === false) {
+        return $value;
+    }
+    return '"' . str_replace('"', '""', $value) . '"';
+}
+
+/**
+ * CSV matching the curriculum import template.
+ *
+ * @param list<array<string,mixed>> $subjects
+ */
+function buildCurriculumExportCsv(array $subjects): string
+{
+    $headers = [
+        'code',
+        'title',
+        'yearLevel',
+        'semester',
+        'curriculumYear',
+        'units',
+        'lectureHours',
+        'labHours',
+        'subjectType',
+        'servingDepartment',
+    ];
+    $lines = [implode(',', $headers)];
+    foreach ($subjects as $row) {
+        $lec = (float) ($row['lectureHours'] ?? 0);
+        $lab = (float) ($row['labHours'] ?? 0);
+        $units = (float) ($row['units'] ?? 0);
+        $lines[] = implode(',', [
+            csvEscapeCell((string) ($row['code'] ?? '')),
+            csvEscapeCell((string) ($row['title'] ?? '')),
+            csvEscapeCell((string) ($row['yearLevel'] ?? '')),
+            csvEscapeCell((string) ($row['semester'] ?? '')),
+            csvEscapeCell((string) ((int) ($row['curriculumYear'] ?? 0))),
+            csvEscapeCell($units == (int) $units ? (string) (int) $units : (string) $units),
+            csvEscapeCell($lec == (int) $lec ? (string) (int) $lec : (string) $lec),
+            csvEscapeCell($lab == (int) $lab ? (string) (int) $lab : (string) $lab),
+            csvEscapeCell((string) ($row['subjectType'] ?? 'MAJOR')),
+            csvEscapeCell((string) ($row['servingDepartmentName'] ?? '')),
+        ]);
+    }
+    return implode("\n", $lines) . "\n";
 }

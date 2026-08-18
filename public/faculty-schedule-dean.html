@@ -10,9 +10,9 @@
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/app.css?v=load-search-1" />
+    <link rel="stylesheet" href="css/app.css?v=nav-no-load-3" />
     <script src="js/theme-boot.js"></script>
-    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-9" />
+    <link rel="stylesheet" href="css/schedule-grid.css?v=emp-status-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -31,96 +31,60 @@
       <section class="panel" style="margin-bottom: 1rem" id="load-command-panel">
         <div class="panel-head">
           <div>
-            <h2>Assign faculty load</h2>
+            <h2>Create faculty load</h2>
             <p class="panel-sub">
-              Select a <strong>faculty</strong>, search for a <strong>subject</strong>, enter the
-              <strong>target load</strong> (hours ÷ 3), then pick from the conflict-free blocks below.
-              Only schedules with no time conflict for the selected faculty are shown.
+              Select a <strong>faculty</strong>, then parse a load command.
+              Load = <strong>(lecture + lab hours) ÷ 3</strong> per offering (scheduled contact hours ÷ 3).
+              Suggested baseline: <strong>Regular = 8</strong>, <strong>Part-time = 3</strong> (you can assign more).
+              Use <em>8 loads</em> for a <strong>total</strong> teaching load of 8 (8.33 or 8.67 is fine; never 9+ unless you add extra load separately).
+              Use <em>8 load IT 322</em> for a specific subject.
+              Use a smaller number (e.g. <em>2 loads</em>) only when adding extra load to someone who is already full.
+            </p>
+            <p class="panel-sub" style="margin-top: 0.45rem">
+              Time filter (optional):
+              <em>3 loads 5pm up</em> — offerings at 5:00 PM or later;
+              <em>3 loads 7 am to 9 am</em> — offerings within 7:00–9:00 AM;
+              <em>3 loads CICT-ATT 5pm up</em> — subject + time filter.
             </p>
           </div>
         </div>
-
-        <div class="stack-form inset-form" style="margin-bottom: 0.85rem">
-          <div class="form-row form-row-2" style="gap: 0.75rem">
-            <label>
-              Faculty
-              <select id="load-faculty-id" name="facultyId">
-                <option value="">Select faculty…</option>
-              </select>
-            </label>
-            <label>
-              Target load
-              <input
-                id="load-target-number"
-                type="number"
-                min="0.5"
-                step="0.5"
-                placeholder="e.g. 8"
-                style="max-width: 140px"
-              />
-            </label>
-          </div>
-
-          <label style="position: relative">
-            Search subject
-            <input
-              id="load-subject-search"
-              type="search"
-              autocomplete="off"
-              placeholder="Type code or name — e.g. IT 322"
-              style="width: 100%"
-            />
-            <ul id="load-subject-dropdown" class="load-subject-dropdown" hidden></ul>
+        <form id="load-command-form" class="stack-form inset-form">
+          <label>
+            Faculty
+            <select id="load-faculty-id" name="facultyId" required>
+              <option value="">Select faculty…</option>
+            </select>
           </label>
-
-          <div id="load-subject-chip" hidden style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap">
-            <span id="load-subject-chip-label" style="font-weight: 700"></span>
-            <span id="load-subject-chip-meta" class="cell-muted" style="font-size: 0.85rem"></span>
-            <button type="button" id="load-subject-clear" class="btn btn-secondary" style="width: auto; min-width: 0; padding: 0.3rem 0.7rem; font-size: 0.82rem; margin-top: 0">
-              ✕ Clear
+          <label>
+            Command
+            <input
+              id="load-command-text"
+              name="command"
+              type="text"
+              required
+              maxlength="500"
+              placeholder="e.g. 8 loads  ·  3 loads 5pm up  ·  3 loads 7 am to 9 am"
+            />
+          </label>
+          <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem">
+            <button class="btn" type="submit" style="width: auto; min-width: 140px">
+              Plan suitable schedule
             </button>
           </div>
-
-          <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem">
-            <button id="load-fetch-btn" class="btn" type="button" style="width: auto; min-width: 180px" disabled>
-              Show available schedules
-            </button>
-          </div>
-        </div>
-
-        <div id="load-offerings-panel" hidden>
-          <div id="load-faculty-info" class="panel-sub" style="margin-bottom: 0.65rem"></div>
-
-          <div class="table-wrap" style="margin-bottom: 0.75rem">
-            <table class="data-table" id="load-offerings-table">
-              <thead>
-                <tr>
-                  <th>Pick</th>
-                  <th>Block</th>
-                  <th>Schedule</th>
-                  <th>Lec</th>
-                  <th>Lab</th>
-                  <th>Contact h</th>
-                  <th>Load (h÷3)</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody id="load-offerings-body"></tbody>
-            </table>
-          </div>
-
-          <div id="load-selection-totals" class="panel-sub" style="margin-bottom: 0.75rem"></div>
-
-          <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem">
+        </form>
+        <div id="load-parse-card" class="command-parse-card" hidden>
+          <p id="load-confirm-summary"></p>
+          <dl id="load-parse-details" class="command-parse-details"></dl>
+          <div id="load-assignment-preview" class="panel-sub" style="margin-top: 0.75rem"></div>
+          <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem; margin-top: 0.85rem">
             <button type="button" class="btn btn-secondary" id="load-cancel-parse" style="width: auto">
               Cancel
             </button>
-            <button type="button" class="btn" id="load-confirm-assign" style="width: auto; min-width: 160px" disabled>
-              Confirm &amp; assign selected
+            <button type="button" class="btn" id="load-confirm-assign" style="width: auto; min-width: 160px">
+              Confirm &amp; assign
             </button>
           </div>
         </div>
-
         <div id="load-command-alert" class="alert alert-error" role="alert" style="margin-top: 0.75rem"></div>
         <div id="load-command-success" class="alert alert-success" role="status" style="margin-top: 0.75rem"></div>
       </section>
@@ -130,13 +94,15 @@
           <div>
             <h2>Faculty timetable</h2>
             <p class="panel-sub">
-              Browse by <strong>room</strong> or <strong>faculty</strong> cards. Click a card to open
-              that weekly grid. Teaching load = <strong>(lecture + lab hours) ÷ 3</strong> per subject.
+              Browse by <strong>room</strong> or <strong>faculty</strong> cards for your department.
+              Click a card to open that weekly grid. Teaching load = <strong>(lecture + lab hours) ÷ 3</strong> per subject.
               Unassigned meetings live under <strong>Schedules → TBF (unassigned)</strong>.
             </p>
           </div>
           <div class="panel-head-actions">
+            <span class="term-chip" id="department-chip" hidden title="Your department">…</span>
             <span class="term-chip" id="term-chip">…</span>
+            <span class="count-chip count-chip--no-load" id="faculty-no-load-chip" hidden title="Faculty with zero teaching load this term">0 with no load yet</span>
             <div class="count-chip"><span id="result-count">0</span> rows</div>
           </div>
         </div>
@@ -206,6 +172,7 @@
                 <th>Block</th>
                 <th>Day / Time</th>
                 <th>Room</th>
+                <th id="schedule-remove-head" hidden>Remove</th>
               </tr>
             </thead>
             <tbody id="schedule-body"></tbody>
@@ -215,9 +182,9 @@
     </div>
 
     <script src="js/api.js"></script>
-    <script src="js/shell.js"></script>
+    <script src="js/shell.js?v=nav-no-load-5"></script>
     <script src="js/attendance-common.js"></script>
-    <script src="js/schedule-grid.js?v=meet-6"></script>
-    <script src="js/faculty-schedule-dean.js?v=load-suggest-4"></script>
+<script src="js/schedule-grid.js?v=single-remove-1"></script>
+<script src="js/faculty-schedule-dean.js?v=no-load-count-2"></script>
   </body>
 </html>

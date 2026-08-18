@@ -3,6 +3,20 @@
 
   const Att = window.ScheduleGuardAttendance;
   const Api = window.ScheduleGuardApi;
+
+  function compareCardLabels(a, b) {
+    return window.ScheduleGrid.compareCardLabels(a, b);
+  }
+
+  function compareBlockCards(a, b) {
+    const na = parseInt(a.blockNumber, 10);
+    const nb = parseInt(b.blockNumber, 10);
+    const aOk = Number.isFinite(na);
+    const bOk = Number.isFinite(nb);
+    if (aOk && bOk && na !== nb) return na - nb;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    return compareCardLabels(a.name, b.name);
+  }
   const user = await Att.requireRole(["ProgramHead"]);
   if (!user) return;
 
@@ -158,18 +172,14 @@
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
     });
-    const order = Object.keys(groups).sort(function (a, b) {
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
+    const order = Object.keys(groups).sort(compareCardLabels);
 
     blocksCardsEl.className = "";
     blocksCardsEl.innerHTML = order
       .map(function (key) {
         const cards = groups[key]
           .slice()
-          .sort(function (a, b) {
-            return String(a.name || "").localeCompare(String(b.name || ""));
-          })
+          .sort(compareBlockCards)
           .map(blockCardHtml)
           .join("");
         return (

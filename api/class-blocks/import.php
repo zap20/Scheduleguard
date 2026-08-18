@@ -5,13 +5,15 @@ declare(strict_types=1);
 /**
  * Dean import of student class blocks from a semester workbook
  * (BSIT / Course and Year + Block grids). IRREG bands are skipped.
- * Rooms are checked (existing term + this file) before a meeting is saved;
- * a busy Excel room is swapped for another free room of the same type.
+ * Preview first (preview=1) lists Excel room conflicts (not GYM / Field / SEAIT).
+ * Those shared venues auto-clone as GYM2, Field2, SEAIT2 when busy.
+ * Commit with resolveConflicts=1 to auto-assign a vacant same-type room, or 0 to skip them.
  */
 
 require_once dirname(__DIR__, 2) . '/includes/bootstrap.php';
 require_once dirname(__DIR__, 2) . '/includes/ClassBlock.php';
 require_once dirname(__DIR__, 2) . '/includes/Schedule.php';
+require_once dirname(__DIR__, 2) . '/includes/Subject.php';
 require_once dirname(__DIR__, 2) . '/includes/SemScheduleImport.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -46,13 +48,31 @@ if ($sheet === '') {
     $sheet = 'BSIT';
 }
 
+$preview = isset($_POST['preview']) && (string) $_POST['preview'] === '1';
+$allowReassign = isset($_POST['resolveConflicts']) && (string) $_POST['resolveConflicts'] === '1';
+
 try {
     $groups = parseSemStudentBlockXlsx($tmpPath, $sheet);
-    $plan = planStudentBlockImport($groups, $departmentId);
+    $plan = planStudentBlockImport($groups, $departmentId, $preview ? false : $allowReassign);
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);
 } catch (Throwable $e) {
     jsonError('Unable to parse import file: ' . $e->getMessage(), 422);
+}
+
+$conflicts = $plan['conflicts'] ?? [];
+
+if ($preview) {
+    jsonSuccess([
+        'preview' => true,
+        'okCount' => count($plan['accepted']),
+        'conflictCount' => count($conflicts),
+        'clonedVenueCount' => (int) ($plan['clonedVenueCount'] ?? 0),
+        'failedCount' => count($plan['failed']),
+        'skippedIrregCount' => $plan['skippedIrreg'],
+        'conflicts' => array_slice($conflicts, 0, 120),
+        'failed' => array_slice($plan['failed'], 0, 40),
+    ]);
 }
 
 $importedBlocks = [];
@@ -60,6 +80,8 @@ $importedMeetings = [];
 $failed = $plan['failed'];
 $skippedIrreg = $plan['skippedIrreg'];
 $reassigned = $plan['reassigned'];
+$clonedVenues = (int) ($plan['clonedVenueCount'] ?? 0);
+$conflictCount = count($conflicts);
 
 foreach ($plan['accepted'] as $item) {
     $group = $item['group'];
@@ -134,16 +156,31 @@ foreach ($plan['accepted'] as $item) {
     }
 }
 
+$term = currentTermWindow();
+$hoursByCode = buildSubjectCatalogHoursFromImportGroups($groups);
+$subjectsUpdated = 0;
+try {
+    $subjectsUpdated = applySubjectCatalogHoursFromImport(
+        $departmentId,
+        $hoursByCode,
+        (int) $term['academicYear']
+    );
+} catch (Throwable $e) {
+    // Meetings imported; subject hour sync is best-effort.
+}
+
 logAudit(
     $user['uid'],
     'IMPORT',
     'class_block',
     sprintf(
-        'Imported student blocks from %s: %d block(s), %d meeting(s) succeeded, %d room(s) reassigned, %d failed, %d IRREG meeting(s) skipped.',
+        'Imported student blocks from %s: %d block(s), %d meeting(s) succeeded, %d room(s) reassigned, %d shared venue clone(s), %d room conflict(s), %d failed, %d IRREG meeting(s) skipped.',
         $originalName,
         count($importedBlocks),
         count($importedMeetings),
         $reassigned,
+        $clonedVenues,
+        $conflictCount,
         count($failed),
         $skippedIrreg
     )
@@ -154,8 +191,13 @@ jsonSuccess([
     'importedBlockCount' => count($importedBlocks),
     'importedCount' => count($importedMeetings),
     'reassignedCount' => $reassigned,
+    'clonedVenueCount' => $clonedVenues,
+    'conflictCount' => $conflictCount,
+    'conflicts' => array_slice($conflicts, 0, 40),
     'failedCount' => count($failed),
     'skippedIrregCount' => $skippedIrreg,
+    'subjectsUpdated' => $subjectsUpdated,
+    'subjectHoursSample' => array_slice($hoursByCode, 0, 8, true),
     'blocks' => array_values($importedBlocks),
     'imported' => array_slice($importedMeetings, 0, 40),
     'failed' => array_slice($failed, 0, 100),

@@ -15,6 +15,38 @@ function generateUid(): string
 }
 
 /**
+ * Course code only: drop LEC/LAB (including LAB/LEC) and block tokens.
+ * "IT 122 LAB/LEC" → "IT 122", "IT 324 4BA01" → "IT 324", "IT221" → "IT 221".
+ */
+function normalizeSubjectCode(string $raw): string
+{
+    $name = strtoupper(trim($raw));
+    $name = preg_replace('/\s+/', ' ', $name) ?? $name;
+    if ($name === '') {
+        return '';
+    }
+
+    // LAB, LEC, LAB/LEC, LEC / LAB, LAB-LEC
+    $base = preg_replace('/\b(?:LEC|LAB)(?:\s*[\/&-]\s*(?:LEC|LAB))?\b/', ' ', $name);
+    $base = preg_replace('/\s+/', ' ', trim($base ?? $name)) ?? $name;
+
+    // Trailing block: 1B01, IB01, 2B12, 4BA01, 1B31A, IRREG…
+    $block = '/\s+(?:IRREG[A-Z0-9]*|(?:\d+)?(?:IB|BA|B)\d+[A-Z]?)$/';
+    $prev = '';
+    while ($prev !== $base) {
+        $prev = $base;
+        $base = trim(preg_replace($block, '', $base) ?? $base);
+    }
+
+    // IT221 → IT 221 (not ITELEC3)
+    if (preg_match('/^([A-Z]{2,8})(\d{2,4}[A-Z]?)$/', $base, $m) === 1) {
+        $base = $m[1] . ' ' . $m[2];
+    }
+
+    return $base !== '' ? $base : $name;
+}
+
+/**
  * Load a user's departmentId from department membership.
  */
 function userDepartmentId(string $userId): ?string
@@ -30,6 +62,36 @@ function userDepartmentId(string $userId): ?string
     }
 
     return (string) $value;
+}
+
+/**
+ * Subject/Curriculum catalog: users with a department only see subjects they own.
+ * Deans without a department may pass an optional department filter.
+ */
+function resolveOwnedSubjectDepartmentScope(array $user, ?string $requestedDepartmentId = null): ?string
+{
+    $ownDept = userDepartmentId((string) ($user['uid'] ?? ''));
+    if ($ownDept !== null && $ownDept !== '') {
+        return $ownDept;
+    }
+    $requested = trim((string) ($requestedDepartmentId ?? ''));
+    return $requested !== '' ? $requested : null;
+}
+
+/**
+ * Write APIs: block cross-department edits when the user belongs to a department.
+ *
+ * @param array<string,mixed> $subject
+ */
+function assertSubjectOwnedByUserDepartment(array $user, array $subject): void
+{
+    $ownDept = userDepartmentId((string) ($user['uid'] ?? ''));
+    if ($ownDept === null || $ownDept === '') {
+        return;
+    }
+    if ((string) ($subject['departmentId'] ?? '') !== $ownDept) {
+        throw new InvalidArgumentException('You may only manage subjects owned by your department.');
+    }
 }
 
 /**

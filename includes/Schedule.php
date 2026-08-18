@@ -401,8 +401,11 @@ function fetchFacultyOwnSchedules(string $facultyId): array
  *
  * @return list<array<string,mixed>>
  */
-function fetchDeanFacultySchedules(?string $facultyId = null, ?string $roomId = null): array
-{
+function fetchDeanFacultySchedules(
+    ?string $facultyId = null,
+    ?string $roomId = null,
+    ?string $viewerDepartmentId = null
+): array {
     $term = currentTermWindow();
     $sql = scheduleSelectSql() . '
         WHERE LOWER(s.status) IN (\'draft\', \'confirmed\', \'conflict\')
@@ -412,6 +415,15 @@ function fetchDeanFacultySchedules(?string $facultyId = null, ?string $roomId = 
         ':academicYear' => $term['academicYear'],
         ':semester' => $term['semester'],
     ];
+
+    if ($viewerDepartmentId !== null && $viewerDepartmentId !== '') {
+        $sql .= ' AND (
+            sub.departmentId = :viewerDepartmentId
+            OR sub.servingDepartmentId = :viewerDepartmentIdServe
+        )';
+        $params[':viewerDepartmentId'] = $viewerDepartmentId;
+        $params[':viewerDepartmentIdServe'] = $viewerDepartmentId;
+    }
 
     if ($facultyId !== null && $facultyId !== '') {
         if (strcasecmp($facultyId, SCHEDULE_INSTRUCTOR_TBF) === 0) {
@@ -601,7 +613,7 @@ function validateScheduleInput(array $input): array
         $subject = findOrCreateSubjectByCode(
             $departmentId,
             $subjectCode,
-            $subjectName !== '' ? $subjectName : $subjectCode,
+            '',
             $yearLevel,
             $curriculumSemester,
             $units

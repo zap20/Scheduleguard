@@ -12,12 +12,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 $user = requireRoles(['Dean', 'ProgramHead']);
 $body = requestBody();
 
-if ($user['role'] === 'ProgramHead') {
-    $ownDept = userDepartmentId($user['uid']);
-    if ($ownDept === null) {
-        jsonError('Program Head has no assigned department.', 403);
-    }
-    $body['departmentId'] = $ownDept;
+$scopedDept = resolveOwnedSubjectDepartmentScope($user, (string) ($body['departmentId'] ?? ''));
+if (($user['role'] ?? '') === 'ProgramHead' && $scopedDept === null) {
+    jsonError('Program Head has no assigned department.', 403);
+}
+if ($scopedDept !== null && $scopedDept !== '') {
+    $body['departmentId'] = $scopedDept;
 }
 
 try {

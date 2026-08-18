@@ -393,7 +393,7 @@
     }
     if (options.clickable && options.clickHint !== false) {
       html +=
-        '<p class="schedule-grid-hint">Click a class to remove that load (whole subject + block).</p>';
+        '<p class="schedule-grid-hint">Click a class or <strong>&times;</strong> to remove that meeting only (returns to TBF).</p>';
     }
 
     html += '<div class="' + wrapClass + '"><table class="' + tableClass + '">';
@@ -433,11 +433,16 @@
             const sid = item.scheduleId ? String(item.scheduleId) : "";
             if (options.clickable && sid) {
               html +=
+                '<div class="sg-block-item">' +
                 '<button type="button" class="sg-block-label is-action" data-schedule-id="' +
                 escapeHtml(sid) +
                 '" title="Remove this load">' +
                 escapeHtml(item.label) +
-                "</button>";
+                "</button>" +
+                '<button type="button" class="sg-block-remove is-action" data-schedule-id="' +
+                escapeHtml(sid) +
+                '" title="Remove this load" aria-label="Remove load">&times;</button>' +
+                "</div>";
             } else {
               html +=
                 '<span class="sg-block-label">' +
@@ -484,14 +489,21 @@
     if (!el || typeof handler !== "function") return;
     el.addEventListener("click", function (ev) {
       const btn = ev.target && ev.target.closest
-        ? ev.target.closest(".sg-block-label.is-action")
+        ? ev.target.closest(".sg-block-label.is-action, .sg-block-remove.is-action")
         : null;
       if (!btn || !el.contains(btn)) return;
       const scheduleId = btn.getAttribute("data-schedule-id") || "";
       if (!scheduleId) return;
+      ev.preventDefault();
       handler({
         scheduleId: scheduleId,
-        label: (btn.textContent || "").trim(),
+        label: (btn.classList.contains("sg-block-remove")
+          ? btn.parentElement &&
+            btn.parentElement.querySelector(".sg-block-label")
+            ? btn.parentElement.querySelector(".sg-block-label").textContent || ""
+            : ""
+          : btn.textContent || ""
+        ).trim(),
       });
     });
   }
@@ -504,8 +516,11 @@
     if (/^(CL|MST|JST)$/i.test(building) && name) {
       return building.toUpperCase() + " " + name;
     }
-    if (/^GYM$/i.test(name) || /^GYM$/i.test(building) || /^GYM$/i.test(label)) {
-      return "GYM";
+    if (/^(GYM|FIELD|SEAIT)\d*$/i.test(name)) {
+      return name.toUpperCase();
+    }
+    if (/^(GYM|FIELD|SEAIT)\d*$/i.test(building) && (!name || name.toUpperCase() === building.toUpperCase())) {
+      return building.toUpperCase();
     }
     if (label && label !== "/") {
       return label.replace(/^Campus\s*\/\s*/i, "");
@@ -537,12 +552,21 @@
     return room ? top + "\n" + room : top;
   }
 
+  /** A–Z with 1, 2, … 10 (not 1, 10, 2). */
+  function compareCardLabels(a, b) {
+    return String(a || "").localeCompare(String(b || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
   window.ScheduleGrid = {
     renderScheduleGrid: renderScheduleGrid,
     mountScheduleGrid: mountScheduleGrid,
     bindScheduleGridClicks: bindScheduleGridClicks,
     formatScheduleRoom: formatScheduleRoom,
     meetingGridLabel: meetingGridLabel,
+    compareCardLabels: compareCardLabels,
     DAY_ORDER: DAY_ORDER.slice(),
   };
 

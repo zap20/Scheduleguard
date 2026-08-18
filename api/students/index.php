@@ -18,12 +18,14 @@ $user = requireRoles(['ProgramHead', 'Dean', 'HR']);
 
 $departmentId = isset($_GET['departmentId']) ? trim((string) $_GET['departmentId']) : '';
 
-if ($user['role'] === 'ProgramHead') {
+if (in_array($user['role'], ['ProgramHead', 'Dean'], true)) {
     $ownDept = userDepartmentId($user['uid']);
-    if ($ownDept === null) {
+    if ($user['role'] === 'ProgramHead' && $ownDept === null) {
         jsonError('Program Head has no assigned department.', 403);
     }
-    $departmentId = $ownDept;
+    if ($ownDept !== null) {
+        $departmentId = $ownDept;
+    }
 }
 
 $sql = 'SELECT uid, firstName, lastName, email, schoolId, departmentId, status

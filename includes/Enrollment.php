@@ -324,7 +324,7 @@ function fetchDistributedStudentSchedule(string $studentId): array
  *
  * @return list<array<string,mixed>>
  */
-function fetchDeanStudentSchedules(?string $studentId = null): array
+function fetchDeanStudentSchedules(?string $studentId = null, ?string $viewerDepartmentId = null): array
 {
     $term = currentTermWindow();
     $sql = enrollmentSelectSql() . '
@@ -340,6 +340,17 @@ function fetchDeanStudentSchedules(?string $studentId = null): array
     if ($studentId !== null && $studentId !== '') {
         $sql .= ' AND e.studentId = :studentId';
         $params[':studentId'] = $studentId;
+    }
+
+    if ($viewerDepartmentId !== null && $viewerDepartmentId !== '') {
+        $sql .= ' AND (
+            s.departmentId = :viewerDepartmentId
+            OR st.departmentId = :viewerStudentDept
+            OR sub.servingDepartmentId = :viewerServeDept
+        )';
+        $params[':viewerDepartmentId'] = $viewerDepartmentId;
+        $params[':viewerStudentDept'] = $viewerDepartmentId;
+        $params[':viewerServeDept'] = $viewerDepartmentId;
     }
 
     $sql .= '

@@ -30,7 +30,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Departments (CICT only)
 INSERT INTO department (uid, name, createdAt) VALUES
 ('dept-cict', 'CICT', NOW()),
-('dept-crim', 'Criminology', NOW());
+('dept-crim', 'Criminology', NOW()),
+('dept-gened', 'GENED', NOW());
 
 -- Rooms
 INSERT INTO room (uid, name, building, capacity, roomType, createdAt) VALUES
@@ -139,6 +140,42 @@ INSERT INTO `user` (
   'Active',
   '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
   NOW()
+),
+(
+  'user-gened-dean',
+  'Gina',
+  'Dean',
+  'gened.dean@scheduleguard.test',
+  '2020-202',
+  'Dean',
+  '09010000013',
+  'Active',
+  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
+  NOW()
+),
+(
+  'user-gened-ph',
+  'Grace',
+  'ProgramHead',
+  'gened.programhead@scheduleguard.test',
+  '2020-402',
+  'ProgramHead',
+  '09010000015',
+  'Active',
+  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
+  NOW()
+),
+(
+  'user-gened-fac-01',
+  'Cara',
+  'Reyes',
+  'gened.faculty01@scheduleguard.test',
+  '2020-601',
+  'Faculty',
+  '09010000601',
+  'Active',
+  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
+  NOW()
 );
 
 INSERT INTO departmentUser (userId, departmentId, createdAt) VALUES
@@ -148,11 +185,15 @@ INSERT INTO departmentUser (userId, departmentId, createdAt) VALUES
 ('user-cict-ph', 'dept-cict', NOW()),
 ('user-cict-student', 'dept-cict', NOW()),
 ('user-cict-fac-01', 'dept-cict', NOW()),
-('user-cict-fac-02', 'dept-cict', NOW());
+('user-cict-fac-02', 'dept-cict', NOW()),
+('user-gened-dean', 'dept-gened', NOW()),
+('user-gened-ph', 'dept-gened', NOW()),
+('user-gened-fac-01', 'dept-gened', NOW());
 
 INSERT INTO faculty (userId, employmentType, createdAt) VALUES
 ('user-cict-fac-01', 'Regular', NOW()),
-('user-cict-fac-02', 'Regular', NOW());
+('user-cict-fac-02', 'Regular', NOW()),
+('user-gened-fac-01', 'Regular', NOW());
 
 INSERT INTO student (userId, yearLevel, studentType, enrollmentEvalStatus, createdAt) VALUES
 ('user-cict-student', '1st Year', 'Regular', 'Pending', NOW());

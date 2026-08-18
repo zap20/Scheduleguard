@@ -3,6 +3,20 @@
 
   const Att = window.ScheduleGuardAttendance;
   const Api = window.ScheduleGuardApi;
+
+  function compareCardLabels(a, b) {
+    return window.ScheduleGrid.compareCardLabels(a, b);
+  }
+
+  function compareBlockCards(a, b) {
+    const na = parseInt(a.blockNumber, 10);
+    const nb = parseInt(b.blockNumber, 10);
+    const aOk = Number.isFinite(na);
+    const bOk = Number.isFinite(nb);
+    if (aOk && bOk && na !== nb) return na - nb;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    return compareCardLabels(a.name, b.name);
+  }
   const user = await Att.requireRole(["Dean"]);
   if (!user) return;
 
@@ -38,6 +52,8 @@
   let yearLevels = [];
   let timetableLoaded = false;
   let allBlocks = [];
+  let pendingImportFile = null;
+  let pendingImportSheet = "";
   let enrolledRows = [];
   let enrolledStudents = [];
 
@@ -189,18 +205,14 @@
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
     });
-    const order = Object.keys(groups).sort(function (a, b) {
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
+    const order = Object.keys(groups).sort(compareCardLabels);
 
     blocksCardsEl.className = "";
     blocksCardsEl.innerHTML = order
       .map(function (key) {
         const cards = groups[key]
           .slice()
-          .sort(function (a, b) {
-            return String(a.name || "").localeCompare(String(b.name || ""));
-          })
+          .sort(compareBlockCards)
           .map(blockCardHtml)
           .join("");
         return (
@@ -379,7 +391,7 @@
         return byId[id];
       })
       .sort(function (a, b) {
-        return String(a.fullName).localeCompare(String(b.fullName));
+        return compareCardLabels(a.fullName, b.fullName);
       });
   }
 
@@ -466,7 +478,7 @@
             const cards = bySchoolYear[schoolYear][yearLevel]
               .slice()
               .sort(function (a, b) {
-                return String(a.fullName).localeCompare(String(b.fullName));
+                return compareCardLabels(a.fullName, b.fullName);
               })
               .map(studentCardHtml)
               .join("");
@@ -591,28 +603,103 @@
     });
   });
 
-  document.getElementById("blocks-import-form").addEventListener("submit", async function (e) {
-    e.preventDefault();
-    hideBlocksMessages();
-    const fileInput = document.getElementById("blocks-import-file");
-    const report = document.getElementById("blocks-import-report");
-    const btn = document.getElementById("blocks-import-submit");
-    if (!fileInput.files || !fileInput.files[0]) {
+  function occupantLabel(row) {
+    const year = (row.withYearLevel || "").trim();
+    const block = (row.withBlockName || "").trim();
+    const subj = (row.withSubject || "").trim();
+    const parts = [];
+    if (year) parts.push(year);
+    if (block) parts.push(block);
+    if (subj) parts.push(subj);
+    return parts.length ? parts.join(" · ") : "another class in this room";
+  }
+
+  function renderImportConflicts(data) {
+    const box = document.getElementById("blocks-import-conflicts");
+    const summary = document.getElementById("blocks-import-conflict-summary");
+    const body = document.getElementById("blocks-import-conflict-body");
+    const conflicts = data.conflicts || [];
+    const blocks = {};
+    conflicts.forEach(function (row) {
+      const key = (row.yearLevel || "") + " · " + (row.blockName || "Block " + (row.blockNumber || ""));
+      blocks[key] = (blocks[key] || 0) + 1;
+    });
+    const blockList = Object.keys(blocks)
+      .map(function (k) {
+        return k + " (" + blocks[k] + ")";
+      })
+      .join("; ");
+    summary.innerHTML =
+      "<strong>" +
+      escapeHtml(String(conflicts.length)) +
+      " room conflict(s)</strong> — " +
+      escapeHtml(String(data.okCount || 0)) +
+      " meeting(s) are free to import. Affected: " +
+      escapeHtml(blockList) +
+      ".";
+    body.innerHTML = conflicts
+      .map(function (row) {
+        return (
+          "<tr>" +
+          "<td>" +
+          escapeHtml(row.yearLevel || "—") +
+          "</td>" +
+          "<td>" +
+          escapeHtml(row.blockName || "Block " + (row.blockNumber || "—")) +
+          "</td>" +
+          "<td>" +
+          escapeHtml(row.subjectCode || row.subjectName || "—") +
+          "</td>" +
+          "<td>" +
+          escapeHtml(row.day || "—") +
+          "</td>" +
+          "<td>" +
+          escapeHtml((row.startTime || "") + "–" + (row.endTime || "")) +
+          "</td>" +
+          "<td>" +
+          escapeHtml(row.roomLabel || "—") +
+          "</td>" +
+          "<td>" +
+          escapeHtml(occupantLabel(row)) +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    box.hidden = false;
+  }
+
+  async function commitBlockImport(resolveConflicts) {
+    if (!pendingImportFile) {
       showBlocksError("Choose the semester XLSX workbook.");
       return;
     }
+    const report = document.getElementById("blocks-import-report");
+    const conflictBox = document.getElementById("blocks-import-conflicts");
+    const btn = document.getElementById("blocks-import-submit");
+    const yesBtn = document.getElementById("blocks-import-resolve-conflicts");
+    const noBtn = document.getElementById("blocks-import-skip-conflicts");
     const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    formData.append("sheet", document.getElementById("blocks-import-sheet").value);
+    formData.append("file", pendingImportFile);
+    formData.append("sheet", pendingImportSheet);
+    formData.append("preview", "0");
+    formData.append("resolveConflicts", resolveConflicts ? "1" : "0");
     btn.disabled = true;
+    yesBtn.disabled = true;
+    noBtn.disabled = true;
     report.hidden = true;
     try {
       const result = await Api.api("/class-blocks/import.php", {
         method: "POST",
         body: formData,
       });
+      conflictBox.hidden = true;
       const failed = result.data.failed || [];
       const reassigned = result.data.reassignedCount || 0;
+      const clonedVenues = result.data.clonedVenueCount || 0;
+      const skippedConflicts = resolveConflicts
+        ? 0
+        : result.data.conflictCount || 0;
       report.hidden = false;
       report.innerHTML =
         "<strong>Import complete</strong>: " +
@@ -620,12 +707,14 @@
         " class block(s), " +
         (result.data.importedCount || 0) +
         " meeting(s) imported" +
-        (reassigned
-          ? ", " + reassigned + " moved to a free room"
+        (reassigned ? ", " + reassigned + " moved to a vacant room" : "") +
+        (clonedVenues
+          ? ", " + clonedVenues + " GYM/Field/SEAIT conflict(s) placed in GYM2 / Field2 / SEAIT2"
           : "") +
+        (skippedConflicts ? ", " + skippedConflicts + " conflict(s) skipped" : "") +
         ", " +
         (result.data.failedCount || 0) +
-        " skipped (overlap / no free room)" +
+        " failed" +
         (result.data.skippedIrregCount
           ? ", " + result.data.skippedIrregCount + " IRREG meeting(s) skipped"
           : "") +
@@ -652,6 +741,59 @@
           " class block(s) from the workbook."
       );
       await loadBlocks();
+    } catch (err) {
+      showBlocksError(err.message || "Import failed.");
+    } finally {
+      btn.disabled = false;
+      yesBtn.disabled = false;
+      noBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("blocks-import-resolve-conflicts").addEventListener("click", function () {
+    hideBlocksMessages();
+    commitBlockImport(true);
+  });
+  document.getElementById("blocks-import-skip-conflicts").addEventListener("click", function () {
+    hideBlocksMessages();
+    commitBlockImport(false);
+  });
+
+  document.getElementById("blocks-import-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    hideBlocksMessages();
+    const fileInput = document.getElementById("blocks-import-file");
+    const report = document.getElementById("blocks-import-report");
+    const conflictBox = document.getElementById("blocks-import-conflicts");
+    const btn = document.getElementById("blocks-import-submit");
+    if (!fileInput.files || !fileInput.files[0]) {
+      showBlocksError("Choose the semester XLSX workbook.");
+      return;
+    }
+    pendingImportFile = fileInput.files[0];
+    pendingImportSheet = document.getElementById("blocks-import-sheet").value;
+    const formData = new FormData();
+    formData.append("file", pendingImportFile);
+    formData.append("sheet", pendingImportSheet);
+    formData.append("preview", "1");
+    btn.disabled = true;
+    report.hidden = true;
+    conflictBox.hidden = true;
+    try {
+      const result = await Api.api("/class-blocks/import.php", {
+        method: "POST",
+        body: formData,
+      });
+      const conflicts = (result.data && result.data.conflicts) || [];
+      if (conflicts.length) {
+        renderImportConflicts(result.data);
+        showBlocksError(
+          conflicts.length +
+            " room conflict(s) found. Review the year and block below, then choose whether to find vacant rooms."
+        );
+        return;
+      }
+      await commitBlockImport(false);
     } catch (err) {
       showBlocksError(err.message || "Import failed.");
     } finally {

@@ -8,6 +8,8 @@
   const pageSize = 10;
   let totalPages = 1;
   let roles = [];
+  let filterRoles = [];
+  let managesAll = false;
   let usersById = {};
   let editingUid = null;
   let currentUser = null;
@@ -88,16 +90,19 @@
     const filterRole = document.getElementById("role");
     const formRole = document.getElementById("form-role");
     const currentFilter = filterRole.value;
+    const listedFilter = filterRoles.length ? filterRoles : roles;
 
     filterRole.innerHTML = '<option value="">All roles</option>';
     formRole.innerHTML = "";
 
-    roles.forEach(function (role) {
+    listedFilter.forEach(function (role) {
       const opt1 = document.createElement("option");
       opt1.value = role;
       opt1.textContent = role;
       filterRole.appendChild(opt1);
+    });
 
+    roles.forEach(function (role) {
       const opt2 = document.createElement("option");
       opt2.value = role;
       opt2.textContent = role;
@@ -105,6 +110,31 @@
     });
 
     filterRole.value = currentFilter;
+  }
+
+  function ensureFormRoleOption(role) {
+    const formRole = document.getElementById("form-role");
+    if (!role) return;
+    for (let i = 0; i < formRole.options.length; i += 1) {
+      if (formRole.options[i].value === role) return;
+    }
+    const opt = document.createElement("option");
+    opt.value = role;
+    opt.textContent = role;
+    formRole.appendChild(opt);
+  }
+
+  function lockDepartmentField() {
+    const select = document.getElementById("form-departmentId");
+    if (!select) return;
+    if (managesAll) {
+      select.disabled = false;
+      return;
+    }
+    if (currentUser && currentUser.departmentId) {
+      select.value = currentUser.departmentId;
+    }
+    select.disabled = true;
   }
 
   function renderUsers(users) {
@@ -224,6 +254,8 @@
     const result = await Api.api("/users/list.php" + queryString());
     if (result.data.roles) {
       roles = result.data.roles;
+      filterRoles = result.data.filterRoles || result.data.roles;
+      managesAll = !!result.data.managesAll;
       fillRoleSelects();
     }
     renderUsers(result.data.users || []);
@@ -271,6 +303,8 @@
     if (roles.length) {
       document.getElementById("form-role").value = roles[0];
     }
+    document.getElementById("form-role").disabled = false;
+    lockDepartmentField();
     syncRoleFields();
     openModal(true);
   }
@@ -279,13 +313,17 @@
     const row = usersById[uid];
     if (!row) return;
     editingUid = uid;
+    ensureFormRoleOption(row.role);
     document.getElementById("form-uid").value = row.uid;
     document.getElementById("form-firstName").value = row.firstName;
     document.getElementById("form-lastName").value = row.lastName;
     document.getElementById("form-schoolId").value = row.schoolId || "";
     document.getElementById("form-email").value = row.email;
     document.getElementById("form-role").value = row.role;
+    document.getElementById("form-role").disabled =
+      !managesAll && currentUser && row.uid === currentUser.uid;
     document.getElementById("form-departmentId").value = row.departmentId || "";
+    lockDepartmentField();
     document.getElementById("form-phoneNumber").value = row.phoneNumber || "";
     document.getElementById("form-status").value = row.status;
     document.getElementById("form-employmentType").value =
@@ -443,11 +481,19 @@
   document.getElementById("form-role").addEventListener("change", syncRoleFields);
 
   (async function boot() {
-    currentUser = await Att.requireRole(["Dean"]);
+    currentUser = await Att.requireRole(["Dean", "HR"]);
     if (!currentUser) return;
 
     document.getElementById("user-label").textContent =
-      currentUser.firstName + " " + currentUser.lastName;
+      currentUser.firstName + " " + currentUser.lastName + " (" + currentUser.role + ")";
+    const sub = document.querySelector(".panel-sub");
+    if (sub && currentUser.role === "HR") {
+      sub.textContent =
+        "HR can create and manage all campus accounts, including Dean, HR, and Checker.";
+    } else if (sub) {
+      sub.textContent =
+        "Manage Faculty, Program Head, and Student accounts in your department. Only HR can create Dean, HR, or Checker users.";
+    }
     Att.bindLogout(document.getElementById("logout-btn"));
 
     try {

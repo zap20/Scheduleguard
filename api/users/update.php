@@ -9,12 +9,40 @@ if (!in_array(($_SERVER['REQUEST_METHOD'] ?? 'GET'), ['POST', 'PUT', 'PATCH'], t
     jsonError('Method not allowed.', 405);
 }
 
-$actor = requireRoles(['Dean']);
+$actor = requireRoles(['Dean', 'HR']);
 $body = requestBody();
 $userId = trim((string) ($body['uid'] ?? $body['userId'] ?? ''));
 
 if ($userId === '') {
     jsonError('uid (or userId) is required.', 422);
+}
+
+$existing = fetchManagedUserById($userId);
+if ($existing === null) {
+    jsonError('User not found.', 404);
+}
+
+try {
+    assertActorMayManageTarget($actor, $existing);
+} catch (InvalidArgumentException $e) {
+    jsonError($e->getMessage(), 403);
+}
+
+if (!actorManagesAllUsers($actor)) {
+    $ownDept = userDepartmentId($actor['uid']);
+    if ($ownDept !== null) {
+        $body['departmentId'] = $ownDept;
+    }
+    $newRole = array_key_exists('role', $body)
+        ? trim((string) $body['role'])
+        : (string) $existing['role'];
+    if ($newRole !== (string) $existing['role']) {
+        try {
+            assertActorMayAssignRole($actor, $newRole);
+        } catch (InvalidArgumentException $e) {
+            jsonError($e->getMessage(), 403);
+        }
+    }
 }
 
 try {

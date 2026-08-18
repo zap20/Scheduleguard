@@ -21,12 +21,15 @@ if ($existing === null) {
     jsonError('Subject not found.', 404);
 }
 
-if ($user['role'] === 'ProgramHead') {
-    $ownDept = userDepartmentId($user['uid']);
-    if ($ownDept === null || $ownDept !== $existing['departmentId']) {
-        jsonError('Program Head may only edit subjects in their department.', 403);
-    }
-    $body['departmentId'] = $ownDept;
+try {
+    assertSubjectOwnedByUserDepartment($user, $existing);
+} catch (InvalidArgumentException $e) {
+    jsonError($e->getMessage(), 403);
+}
+
+$scopedDept = resolveOwnedSubjectDepartmentScope($user, (string) ($body['departmentId'] ?? ''));
+if ($scopedDept !== null && $scopedDept !== '') {
+    $body['departmentId'] = $scopedDept;
 }
 
 try {

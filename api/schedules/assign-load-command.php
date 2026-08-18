@@ -33,17 +33,23 @@ if ($departmentId === null) {
 }
 
 $parsed = parseFacultyLoadCommand($raw);
-// Keep the subject chosen at parse time when command was "N loads" (random).
-if ($subjectCodeOverride !== '' && trim((string) ($parsed['subjectCode'] ?? '')) === '') {
-    $parsed['subjectCode'] = strtoupper($subjectCodeOverride);
-    $parsed['subjectSpecified'] = true;
-}
-
 $selectedOfferingKeys = null;
 if (isset($body['offeringKeys']) && is_array($body['offeringKeys'])) {
     $selectedOfferingKeys = array_values(array_filter(array_map('strval', $body['offeringKeys'])));
 } elseif (isset($body['selectedOfferingKeys']) && is_array($body['selectedOfferingKeys'])) {
     $selectedOfferingKeys = array_values(array_filter(array_map('strval', $body['selectedOfferingKeys'])));
+}
+
+// Pin a subject from preview only when the typed command had no code AND
+// the client did not send a multi-offering selection (e.g. "8 loads" across subjects).
+$commandNamedSubject = trim((string) ($parsed['subjectCode'] ?? '')) !== '';
+if (
+    !$commandNamedSubject
+    && $subjectCodeOverride !== ''
+    && ($selectedOfferingKeys === null || $selectedOfferingKeys === [])
+) {
+    $parsed['subjectCode'] = strtoupper($subjectCodeOverride);
+    $parsed['subjectSpecified'] = true;
 }
 
 try {

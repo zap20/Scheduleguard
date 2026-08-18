@@ -9,14 +9,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-requireRoles(['Dean', 'ProgramHead', 'HR']);
+$user = requireRoles(['Dean', 'ProgramHead', 'HR']);
 
-$stmt = db()->query(
-    "SELECT uid, firstName, lastName, email, schoolId, departmentId, employmentType
+$sql = "SELECT uid, firstName, lastName, email, schoolId, departmentId, employmentType
      FROM userProfile
-     WHERE role = 'Faculty' AND status = 'Active'
-     ORDER BY lastName ASC, firstName ASC"
-);
+     WHERE role = 'Faculty' AND status = 'Active'";
+$params = [];
+
+if (in_array($user['role'], ['Dean', 'ProgramHead'], true)) {
+    $ownDept = userDepartmentId($user['uid']);
+    if (($user['role'] === 'ProgramHead') && $ownDept === null) {
+        jsonError('Program Head has no assigned department.', 403);
+    }
+    if ($ownDept !== null) {
+        $sql .= ' AND departmentId = :departmentId';
+        $params[':departmentId'] = $ownDept;
+    }
+}
+
+$sql .= ' ORDER BY lastName ASC, firstName ASC';
+
+$stmt = db()->prepare($sql);
+$stmt->execute($params);
 
 $faculty = array_map(static function (array $row): array {
     $employmentType = normalizeFacultyEmploymentType(

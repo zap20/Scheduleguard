@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Remove a faculty load offering (unassign all meetings in the subject + block group).
+ * Remove one faculty meeting from load (returns that slot to TBF).
  * Body: { "scheduleId": "..." }
  */
 
@@ -33,7 +33,7 @@ logAudit(
     'UNASSIGN',
     'faculty_load',
     sprintf(
-        'Removed load of %s (%s) from %s — %d meeting(s) returned to TBF.',
+        'Removed load of %s (%s) from %s — %d meeting returned to TBF.',
         (string) $result['subjectCode'],
         (string) $result['blockName'],
         (string) $result['facultyName'],

@@ -13,11 +13,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-requireRoles(['Dean']);
+$user = requireRoles(['Dean']);
 
 $studentId = isset($_GET['studentId']) ? trim((string) $_GET['studentId']) : '';
+$viewerDepartmentId = userDepartmentId($user['uid']);
 
 jsonSuccess([
     'term' => currentTermWindow(),
-    'schedules' => fetchDeanStudentSchedules($studentId !== '' ? $studentId : null),
+    'schedules' => fetchDeanStudentSchedules(
+        $studentId !== '' ? $studentId : null,
+        $viewerDepartmentId
+    ),
 ]);

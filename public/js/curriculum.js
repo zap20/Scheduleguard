@@ -7,8 +7,12 @@
   if (!user) return;
 
   const isProgramHead = user.role === "ProgramHead";
+  const isDepartmentScoped = isProgramHead || !!(user.departmentId || "");
   let departments = [];
   let subjects = [];
+  let curricSubjects = [];
+  let selectedCurriculumYear = 0;
+  let defaultAddYear = 0;
 
   const alertEl = document.getElementById("curriculum-alert");
   const successEl = document.getElementById("curriculum-success");
@@ -32,7 +36,7 @@
     user.firstName + " " + user.lastName + " (" + user.role + ")";
   Att.bindLogout(document.getElementById("logout-btn"));
 
-  if (isProgramHead) {
+  if (isDepartmentScoped) {
     document.getElementById("department-filter-wrap").hidden = true;
     document.getElementById("subject-department-wrap").hidden = true;
     ownerSelect.required = false;
@@ -75,7 +79,7 @@
   }
 
   function owningDepartmentId() {
-    if (isProgramHead) {
+    if (isDepartmentScoped) {
       return user.departmentId || "";
     }
     return ownerSelect.value || "";
@@ -148,7 +152,7 @@
     const sem = document.getElementById("filter-semester").value;
     const status = document.getElementById("filter-status").value;
     const q = document.getElementById("filter-q").value.trim();
-    if (!isProgramHead && dept) params.set("departmentId", dept);
+    if (!isDepartmentScoped && dept) params.set("departmentId", dept);
     if (type) params.set("subjectType", type);
     if (serves) params.set("servingDepartmentId", serves);
     if (year) params.set("yearLevel", year);
@@ -283,9 +287,13 @@
     const filter = document.getElementById("filter-departmentId");
     departments = list || [];
 
-    if (!isProgramHead) {
+    if (!isDepartmentScoped) {
       filter.innerHTML = '<option value="">All departments</option>';
       ownerSelect.innerHTML = '<option value="">Select department…</option>';
+      const importDept = document.getElementById("curric-import-departmentId");
+      if (importDept) {
+        importDept.innerHTML = '<option value="">Select department…</option>';
+      }
       departments.forEach(function (d) {
         const o1 = document.createElement("option");
         o1.value = d.uid;
@@ -295,7 +303,16 @@
         o2.value = d.uid;
         o2.textContent = d.name;
         ownerSelect.appendChild(o2);
+        if (importDept) {
+          const o3 = document.createElement("option");
+          o3.value = d.uid;
+          o3.textContent = d.name;
+          importDept.appendChild(o3);
+        }
       });
+      if (importDept && user.departmentId) {
+        importDept.value = user.departmentId;
+      }
     }
     refreshServingSuggestions();
   }
@@ -329,12 +346,12 @@
     document.getElementById("subject-semester").value = row ? row.semester : "1st Semester";
     document.getElementById("subject-curriculumYear").value = row
       ? row.curriculumYear
-      : new Date().getFullYear();
+      : defaultAddYear || new Date().getFullYear();
     document.getElementById("subject-units").value = row ? row.units : 3;
     typeSelect.value = row && row.subjectType === "MINOR" ? "MINOR" : "MAJOR";
-    lectureHoursInput.value = row ? row.lectureHours ?? 1.5 : 1.5;
+    lectureHoursInput.value = row ? row.lectureHours ?? 0 : 0;
     labHoursInput.value = row ? row.labHours ?? 0 : 0;
-    if (!isProgramHead) {
+    if (!isDepartmentScoped) {
       ownerSelect.value = row ? row.departmentId : "";
     }
     servingNameInput.value = row && row.servingDepartmentName ? row.servingDepartmentName : "";
@@ -378,13 +395,18 @@
 
   // Serves is edited only via the Edit modal text field.
 
-  groupsEl.addEventListener("click", async function (e) {
+  async function handleSubjectTableClick(e) {
     const editBtn = e.target.closest(".btn-edit");
     const archiveBtn = e.target.closest(".btn-archive");
     if (editBtn) {
-      const row = subjects.find(function (s) {
-        return s.uid === editBtn.getAttribute("data-uid");
-      });
+      const uid = editBtn.getAttribute("data-uid");
+      const row =
+        subjects.find(function (s) {
+          return s.uid === uid;
+        }) ||
+        curricSubjects.find(function (s) {
+          return s.uid === uid;
+        });
       if (row) openModal(row);
       return;
     }
@@ -395,17 +417,21 @@
       }
       try {
         hideMessages();
+        hideCurricMessages();
         await Api.api("/subjects/archive.php", {
           method: "POST",
           body: JSON.stringify({ subjectId: uid }),
         });
         showSuccess("Subject archived.");
         await loadSubjects();
+        await loadCurricula(selectedCurriculumYear || undefined);
       } catch (err) {
         showError(err.message || "Archive failed.");
       }
     }
-  });
+  }
+
+  groupsEl.addEventListener("click", handleSubjectTableClick);
 
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
@@ -429,8 +455,10 @@
       servingDepartmentName: servingName,
       servingDepartmentId: "",
     };
-    if (!isProgramHead) {
+    if (!isDepartmentScoped) {
       payload.departmentId = ownerSelect.value;
+    } else if (user.departmentId) {
+      payload.departmentId = user.departmentId;
     }
 
     try {
@@ -476,8 +504,428 @@
       await loadDepartments();
       closeModal();
       await loadSubjects();
+      await loadCurricula(selectedCurriculumYear || undefined);
     } catch (err) {
       showModalError(err.message || "Save failed.");
+    }
+  });
+
+  const curricAlert = document.getElementById("curric-alert");
+  const curricSuccess = document.getElementById("curric-success");
+  const curricYearsEl = document.getElementById("curric-years");
+  const curricYearsEmpty = document.getElementById("curric-years-empty");
+  const curricCompareEl = document.getElementById("curric-compare");
+  const curricGroupsEl = document.getElementById("curric-groups");
+  const curricEmptyEl = document.getElementById("curric-empty");
+  const curricCountEl = document.getElementById("curric-count");
+
+  if (isDepartmentScoped) {
+    document.getElementById("curric-import-department-wrap").hidden = true;
+  }
+
+  function hideCurricMessages() {
+    curricAlert.classList.remove("show");
+    curricSuccess.classList.remove("show");
+  }
+
+  function showCurricError(message) {
+    curricSuccess.classList.remove("show");
+    curricAlert.textContent = message;
+    curricAlert.classList.add("show");
+  }
+
+  function showCurricSuccess(message) {
+    curricAlert.classList.remove("show");
+    curricSuccess.textContent = message;
+    curricSuccess.classList.add("show");
+  }
+
+  function setPane(pane) {
+    document.querySelectorAll(".module-tab").forEach(function (tab) {
+      tab.classList.toggle("is-active", tab.getAttribute("data-pane") === pane);
+    });
+    document.querySelectorAll(".module-pane").forEach(function (el) {
+      el.hidden = el.getAttribute("data-pane") !== pane;
+    });
+    if (pane === "curriculum") {
+      loadCurricula(selectedCurriculumYear || undefined).catch(function (err) {
+        showCurricError(err.message || "Failed to load curricula.");
+      });
+    }
+  }
+
+  function renderYearCards(list, activeYear) {
+    curricYearsEl.innerHTML = "";
+    if (!list.length) {
+      curricYearsEmpty.hidden = false;
+      return;
+    }
+    curricYearsEmpty.hidden = true;
+    list.forEach(function (row) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className =
+        "curriculum-year-card" + (row.curriculumYear === activeYear ? " is-active" : "");
+      btn.setAttribute("data-year", String(row.curriculumYear));
+      const updated = row.lastCreatedAt
+        ? " · updated " + String(row.lastCreatedAt).slice(0, 10)
+        : "";
+      btn.innerHTML =
+        "<strong>" +
+        escapeHtml(row.curriculumYear) +
+        "</strong><span>" +
+        escapeHtml(row.subjectCount) +
+        " subjects · " +
+        escapeHtml(row.majorCount) +
+        " major / " +
+        escapeHtml(row.minorCount) +
+        " minor" +
+        escapeHtml(updated) +
+        "</span>";
+      curricYearsEl.appendChild(btn);
+    });
+  }
+
+  function renderCompare(compare) {
+    if (!compare) {
+      curricCompareEl.hidden = true;
+      curricCompareEl.innerHTML = "";
+      return;
+    }
+    const added = compare.added || [];
+    const removed = compare.removed || [];
+    const changed = compare.changed || [];
+    if (!added.length && !removed.length && !changed.length) {
+      curricCompareEl.hidden = false;
+      curricCompareEl.innerHTML =
+        "<h3 class=\"form-title\">Changes vs " +
+        escapeHtml(compare.fromYear) +
+        "</h3><p class=\"panel-sub\" style=\"margin:0\">No subject-code changes versus the previous curriculum.</p>";
+      return;
+    }
+    function listItems(rows, pick) {
+      return rows
+        .slice(0, 12)
+        .map(function (row) {
+          return "<li>" + escapeHtml(pick(row)) + "</li>";
+        })
+        .join("");
+    }
+    curricCompareEl.hidden = false;
+    curricCompareEl.innerHTML =
+      "<h3 class=\"form-title\">Changes vs " +
+      escapeHtml(compare.fromYear) +
+      "</h3>" +
+      '<div class="change-pills">' +
+      '<span class="count-chip">+' +
+      added.length +
+      " added</span>" +
+      '<span class="count-chip">−' +
+      removed.length +
+      " removed</span>" +
+      '<span class="count-chip">' +
+      changed.length +
+      " changed</span>" +
+      "</div>" +
+      (added.length
+        ? "<p class=\"panel-sub\" style=\"margin:0.35rem 0 0\"><strong>Added</strong></p><ul>" +
+          listItems(added, function (r) {
+            return r.code + (r.title ? " — " + r.title : "");
+          }) +
+          "</ul>"
+        : "") +
+      (removed.length
+        ? "<p class=\"panel-sub\" style=\"margin:0.35rem 0 0\"><strong>Removed</strong></p><ul>" +
+          listItems(removed, function (r) {
+            return r.code + (r.title ? " — " + r.title : "");
+          }) +
+          "</ul>"
+        : "") +
+      (changed.length
+        ? "<p class=\"panel-sub\" style=\"margin:0.35rem 0 0\"><strong>Changed</strong></p><ul>" +
+          listItems(changed, function (r) {
+            return r.code + " · " + (r.changes || []).join("; ");
+          }) +
+          "</ul>"
+        : "");
+  }
+
+  function renderCurriculumSubjects(rows) {
+    curricSubjects = rows;
+    curricCountEl.textContent = String(rows.length);
+    curricGroupsEl.innerHTML = "";
+    if (rows.length === 0) {
+      curricEmptyEl.hidden = false;
+      return;
+    }
+    curricEmptyEl.hidden = true;
+
+    const groups = {};
+    rows.forEach(function (row) {
+      const key = groupKey(row);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(row);
+    });
+
+    Object.keys(groups)
+      .sort(function (a, b) {
+        return groupSortKey(a) - groupSortKey(b);
+      })
+      .forEach(function (key) {
+        const section = document.createElement("div");
+        section.className = "curriculum-group";
+        section.innerHTML =
+          "<h3 class=\"form-title\" style=\"margin-top:1.25rem\">" +
+          escapeHtml(key) +
+          ' <span class="count-chip" style="display:inline-flex;margin-left:0.5rem">' +
+          groups[key].length +
+          "</span></h3>";
+
+        const wrap = document.createElement("div");
+        wrap.className = "table-wrap";
+        const table = document.createElement("table");
+        table.className = "data-table";
+        table.innerHTML =
+          "<thead><tr>" +
+          "<th>Code</th><th>Title</th><th>Type</th><th>Hours</th><th>Units</th>" +
+          "<th>Year</th><th>Owner</th><th>Serves</th><th>Status</th><th>Actions</th>" +
+          "</tr></thead>";
+        const tbody = document.createElement("tbody");
+
+        groups[key].forEach(function (row) {
+          const tr = document.createElement("tr");
+          const archived = String(row.status).toLowerCase() === "archived";
+          const typeLabel = row.subjectType === "MINOR" ? "Minor" : "Major";
+          tr.innerHTML =
+            "<td><strong>" +
+            escapeHtml(row.code) +
+            "</strong></td>" +
+            "<td>" +
+            escapeHtml(row.title || "—") +
+            "</td>" +
+            "<td>" +
+            escapeHtml(typeLabel) +
+            "</td>" +
+            "<td>" +
+            escapeHtml(row.sessionSummary || "—") +
+            "</td>" +
+            "<td>" +
+            escapeHtml(row.units) +
+            "</td>" +
+            "<td>" +
+            escapeHtml(row.curriculumYear) +
+            "</td>" +
+            "<td>" +
+            escapeHtml(row.departmentName) +
+            "</td>" +
+            "<td>" +
+            escapeHtml(row.servingDepartmentName || "—") +
+            "</td>" +
+            "<td><span class=\"status-badge " +
+            (archived ? "status-wrong" : "status-present") +
+            '">' +
+            escapeHtml(row.status) +
+            "</span></td>" +
+            "<td class=\"row-actions\">" +
+            '<button type="button" class="btn btn-secondary btn-edit" data-uid="' +
+            escapeHtml(row.uid) +
+            '" style="width:auto;min-width:70px">Edit</button> ' +
+            (archived
+              ? ""
+              : '<button type="button" class="btn btn-secondary btn-archive" data-uid="' +
+                escapeHtml(row.uid) +
+                '" style="width:auto;min-width:80px">Archive</button>') +
+            "</td>";
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        section.appendChild(wrap);
+        curricGroupsEl.appendChild(section);
+      });
+  }
+
+  async function loadCurricula(year) {
+    hideCurricMessages();
+    const params = new URLSearchParams();
+    const dept = document.getElementById("filter-departmentId").value || user.departmentId || "";
+    if (!isDepartmentScoped && dept) params.set("departmentId", dept);
+    if (year) params.set("curriculumYear", String(year));
+    const qs = params.toString() ? "?" + params.toString() : "";
+    const res = await Api.api("/subjects/curricula.php" + qs);
+    const data = (res && res.data) || {};
+    const list = data.curricula || [];
+    selectedCurriculumYear = Number(data.curriculumYear) || 0;
+    defaultAddYear = selectedCurriculumYear || 0;
+    renderYearCards(list, selectedCurriculumYear);
+    renderCompare(data.compare || null);
+    renderCurriculumSubjects(data.subjects || []);
+    if (selectedCurriculumYear) {
+      document.getElementById("curric-import-year").placeholder =
+        "Default " + selectedCurriculumYear + " from CSV";
+    }
+  }
+
+  document.querySelectorAll(".module-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      setPane(tab.getAttribute("data-pane"));
+    });
+  });
+
+  curricYearsEl.addEventListener("click", function (e) {
+    const card = e.target.closest(".curriculum-year-card");
+    if (!card) return;
+    const year = Number(card.getAttribute("data-year"));
+    loadCurricula(year).catch(function (err) {
+      showCurricError(err.message || "Failed to load curriculum.");
+    });
+  });
+
+  curricGroupsEl.addEventListener("click", handleSubjectTableClick);
+
+  document.getElementById("curric-add-btn").addEventListener("click", function () {
+    defaultAddYear = selectedCurriculumYear || defaultAddYear;
+    openModal(null);
+  });
+
+  async function downloadCurriculumCsv() {
+    hideCurricMessages();
+    const year = selectedCurriculumYear;
+    if (!year) {
+      showCurricError("Select a curriculum year to download.");
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("curriculumYear", String(year));
+    const dept =
+      document.getElementById("curric-import-departmentId").value ||
+      document.getElementById("filter-departmentId").value ||
+      user.departmentId ||
+      "";
+    if (!isDepartmentScoped && dept) {
+      params.set("departmentId", dept);
+    }
+
+    const headers = { Accept: "text/csv" };
+    const token = Api.getToken && Api.getToken();
+    if (token) {
+      headers.Authorization = "Bearer " + token;
+    }
+
+    const btn = document.getElementById("curric-download-btn");
+    btn.disabled = true;
+    try {
+      const response = await fetch(Api.apiBase() + "/subjects/export.php?" + params.toString(), {
+        credentials: "include",
+        headers: headers,
+      });
+      const type = response.headers.get("Content-Type") || "";
+      if (!response.ok || type.indexOf("json") !== -1) {
+        let message = "Download failed.";
+        try {
+          const payload = await response.json();
+          message = (payload && payload.error) || message;
+        } catch (ignore) {}
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "curriculum-" + year + ".csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showCurricSuccess("Downloaded curriculum " + year + ".");
+    } catch (err) {
+      showCurricError(err.message || "Download failed.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById("curric-download-btn").addEventListener("click", function () {
+    downloadCurriculumCsv();
+  });
+  document.getElementById("curric-download-link").addEventListener("click", function () {
+    downloadCurriculumCsv();
+  });
+
+  document.getElementById("curric-import-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    hideCurricMessages();
+    const fileInput = document.getElementById("curric-import-file");
+    const report = document.getElementById("curric-import-report");
+    const btn = document.getElementById("curric-import-submit");
+    if (!fileInput.files || !fileInput.files[0]) {
+      showCurricError("Choose the curriculum CSV file.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    const importDept =
+      document.getElementById("curric-import-departmentId").value || user.departmentId || "";
+    if (importDept) {
+      formData.append("departmentId", importDept);
+    }
+    const yearOverride = document.getElementById("curric-import-year").value.trim();
+    if (yearOverride) {
+      formData.append("curriculumYear", yearOverride);
+    }
+    btn.disabled = true;
+    report.hidden = true;
+    try {
+      const result = await Api.api("/subjects/import.php", {
+        method: "POST",
+        body: formData,
+      });
+      const failed = result.data.failed || [];
+      report.hidden = false;
+      report.innerHTML =
+        "<strong>Import complete</strong>: " +
+        (result.data.createdCount || 0) +
+        " created, " +
+        (result.data.updatedCount || 0) +
+        " updated, " +
+        (result.data.skippedCount || 0) +
+        " unchanged, " +
+        (result.data.failedCount || 0) +
+        " failed." +
+        (failed.length
+          ? "<ul>" +
+            failed
+              .slice(0, 12)
+              .map(function (row) {
+                return (
+                  "<li>Row " +
+                  escapeHtml(row.row || "?") +
+                  (row.code ? " (" + escapeHtml(row.code) + ")" : "") +
+                  ": " +
+                  escapeHtml(row.error || "failed") +
+                  "</li>"
+                );
+              })
+              .join("") +
+            "</ul>"
+          : "");
+      showCurricSuccess(
+        "Imported " +
+          (result.data.createdCount || 0) +
+          " new and updated " +
+          (result.data.updatedCount || 0) +
+          " existing subject(s)."
+      );
+      fileInput.value = "";
+      await loadSubjects();
+      await loadCurricula(
+        Number(result.data.curriculumYear) || selectedCurriculumYear || undefined
+      );
+    } catch (err) {
+      showCurricError(err.message || "Import failed.");
+    } finally {
+      btn.disabled = false;
     }
   });
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/config/database.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/Term.php';
 
 const ROOM_TYPE_LAB = 'LAB';
 const ROOM_TYPE_LECTURE = 'LECTURE';
@@ -53,6 +54,56 @@ function fetchRooms(?string $roomType = null, string $search = ''): array
 
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
+    return array_map('mapRoomRow', $stmt->fetchAll());
+}
+
+/**
+ * Rooms used by a department's current-term schedules (subject owner or serving dept).
+ *
+ * @return list<array<string,mixed>>
+ */
+function fetchRoomsForDepartment(
+    ?string $departmentId,
+    ?string $roomType = null,
+    string $search = ''
+): array {
+    if ($departmentId === null || $departmentId === '') {
+        return fetchRooms($roomType, $search);
+    }
+
+    $term = currentTermWindow();
+    $sql = 'SELECT DISTINCT r.uid, r.name, r.building, r.capacity, r.roomType, r.createdAt
+            FROM room r
+            INNER JOIN schedule s ON s.roomId = r.uid
+            INNER JOIN subject sub ON sub.uid = s.subjectId
+            WHERE LOWER(s.status) IN (\'draft\', \'confirmed\', \'conflict\')
+              AND s.academicYear = :academicYear
+              AND s.semester = :semester
+              AND (
+                  sub.departmentId = :departmentId
+                  OR sub.servingDepartmentId = :departmentIdServe
+              )';
+    $params = [
+        ':academicYear' => $term['academicYear'],
+        ':semester' => $term['semester'],
+        ':departmentId' => $departmentId,
+        ':departmentIdServe' => $departmentId,
+    ];
+
+    if ($roomType !== null && $roomType !== '') {
+        $sql .= ' AND r.roomType = :roomType';
+        $params[':roomType'] = strtoupper($roomType);
+    }
+    if ($search !== '') {
+        $sql .= ' AND (r.name LIKE :q OR r.building LIKE :q)';
+        $params[':q'] = '%' . $search . '%';
+    }
+
+    $sql .= ' ORDER BY r.roomType ASC, r.building ASC, r.name ASC';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+
     return array_map('mapRoomRow', $stmt->fetchAll());
 }
 
@@ -199,9 +250,17 @@ function updateRoom(string $roomId, array $input): array
 
 function inferRoomTypeFromLabel(string $label): string
 {
-    $upper = strtoupper($label);
-    if (str_contains($upper, 'LAB') || str_contains($upper, 'CL ')) {
+    $upper = strtoupper(trim($label));
+    // Computer labs only. MST/JST stay lecture even when the name contains "LAB"
+    // (e.g. "MST 2ND FLOOR HRM LAB" is still an MST lecture hall).
+    if (preg_match('/^(CL|NETLAB)\b/', $upper) === 1) {
         return ROOM_TYPE_LAB;
+    }
+    if (str_contains($upper, 'NETLAB') || preg_match('/\bCL\s*\d/', $upper) === 1) {
+        return ROOM_TYPE_LAB;
+    }
+    if (preg_match('/^(MST|JST|GYM)\b/', $upper) === 1) {
+        return ROOM_TYPE_LECTURE;
     }
     return ROOM_TYPE_LECTURE;
 }
@@ -218,8 +277,13 @@ function formatRoomDisplayLabel(?string $building, ?string $name, ?string $fallb
     if (preg_match('/^(CL|MST|JST)$/i', $building) === 1 && $name !== '') {
         return strtoupper($building) . ' ' . $name;
     }
-    if (strcasecmp($name, 'GYM') === 0 || strcasecmp($building, 'GYM') === 0) {
-        return 'GYM';
+    if (preg_match('/^(GYM|FIELD|SEAIT)\d*$/i', $name) === 1) {
+        return strtoupper($name);
+    }
+    if (preg_match('/^(GYM|FIELD|SEAIT)\d*$/i', $building) === 1
+        && ($name === '' || strcasecmp($name, $building) === 0)
+    ) {
+        return strtoupper($building);
     }
     if ($building !== '' && $name !== '') {
         if (strcasecmp($building, $name) === 0) {

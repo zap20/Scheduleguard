@@ -18,6 +18,12 @@ const USER_ROLES = [
     'Student',
 ];
 
+/** Campus-wide accounts. Only HR may create or manage these (except a Dean editing themselves). */
+const CAMPUS_ADMIN_ROLES = ['Dean', 'HR', 'Checker'];
+
+/** Roles a Dean may create and manage inside their department. */
+const DEAN_MANAGEABLE_ROLES = ['Faculty', 'ProgramHead', 'Student'];
+
 const FACULTY_EMPLOYMENT_TYPES = ['Regular', 'PartTime'];
 const STUDENT_TYPES = ['Regular', 'Irregular'];
 const USER_YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
@@ -30,6 +36,60 @@ function facultyMinLoadForEmploymentType(?string $employmentType): float
 {
     $type = normalizeFacultyEmploymentType($employmentType, false);
     return $type === 'PartTime' ? FACULTY_MIN_LOAD_PART_TIME : FACULTY_MIN_LOAD_REGULAR;
+}
+
+function actorManagesAllUsers(array $actor): bool
+{
+    return ($actor['role'] ?? '') === 'HR';
+}
+
+/**
+ * @return list<string>
+ */
+function rolesCreatableByActor(array $actor): array
+{
+    if (actorManagesAllUsers($actor)) {
+        return USER_ROLES;
+    }
+    return DEAN_MANAGEABLE_ROLES;
+}
+
+function assertActorMayAssignRole(array $actor, string $role): void
+{
+    if (!in_array($role, rolesCreatableByActor($actor), true)) {
+        throw new InvalidArgumentException(
+            'Only HR can create or assign Dean, HR, and Checker accounts.'
+        );
+    }
+}
+
+/**
+ * @param array<string,mixed> $target
+ */
+function assertActorMayManageTarget(array $actor, array $target, bool $allowSelf = true): void
+{
+    if (actorManagesAllUsers($actor)) {
+        return;
+    }
+
+    $actorId = (string) ($actor['uid'] ?? '');
+    $targetId = (string) ($target['uid'] ?? '');
+    if ($allowSelf && $actorId !== '' && $actorId === $targetId) {
+        return;
+    }
+
+    $targetRole = (string) ($target['role'] ?? '');
+    if (in_array($targetRole, CAMPUS_ADMIN_ROLES, true)) {
+        throw new InvalidArgumentException('Only HR can manage Dean, HR, and Checker accounts.');
+    }
+
+    $ownDept = userDepartmentId($actorId);
+    if ($ownDept === null || $ownDept === '') {
+        throw new InvalidArgumentException('Your account has no assigned department.');
+    }
+    if ((string) ($target['departmentId'] ?? '') !== $ownDept) {
+        throw new InvalidArgumentException('You may only manage users in your department.');
+    }
 }
 
 function normalizeFacultyEmploymentType(?string $raw, bool $required = false): ?string
@@ -237,7 +297,10 @@ function fetchManagedUsers(
     ?string $role,
     ?string $status,
     int $page,
-    int $pageSize
+    int $pageSize,
+    ?string $departmentId = null,
+    ?array $roleAllowlist = null,
+    ?string $alwaysIncludeUserId = null
 ): array {
     $where = ['1 = 1'];
     $params = [];
@@ -253,6 +316,30 @@ function fetchManagedUsers(
     if ($status !== null && $status !== '') {
         $where[] = 'u.status = :status';
         $params[':status'] = $status;
+    }
+    if ($departmentId !== null && $departmentId !== '') {
+        if ($alwaysIncludeUserId) {
+            $where[] = '(u.departmentId = :departmentId OR u.uid = :alwaysUidDept)';
+            $params[':departmentId'] = $departmentId;
+            $params[':alwaysUidDept'] = $alwaysIncludeUserId;
+        } else {
+            $where[] = 'u.departmentId = :departmentId';
+            $params[':departmentId'] = $departmentId;
+        }
+    }
+    if ($roleAllowlist !== null && $roleAllowlist !== []) {
+        $in = [];
+        foreach (array_values($roleAllowlist) as $i => $allowedRole) {
+            $key = ':roleAllow' . $i;
+            $in[] = $key;
+            $params[$key] = $allowedRole;
+        }
+        $clause = 'u.role IN (' . implode(', ', $in) . ')';
+        if ($alwaysIncludeUserId) {
+            $clause = '(' . $clause . ' OR u.uid = :alwaysUidRole)';
+            $params[':alwaysUidRole'] = $alwaysIncludeUserId;
+        }
+        $where[] = $clause;
     }
 
     $whereSql = implode(' AND ', $where);

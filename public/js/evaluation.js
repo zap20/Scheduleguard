@@ -3,6 +3,13 @@
 
   const Att = window.ScheduleGuardAttendance;
   const Api = window.ScheduleGuardApi;
+
+  function compareCardLabels(a, b) {
+    return String(a || "").localeCompare(String(b || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
   const user = await Att.requireRole(["ProgramHead"]);
   if (!user) return;
 
@@ -140,9 +147,7 @@
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
     });
-    const order = Object.keys(groups).sort(function (a, b) {
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
+    const order = Object.keys(groups).sort(compareCardLabels);
 
     groupsEl.innerHTML = order
       .map(function (key) {
@@ -159,7 +164,7 @@
             const cards = byType[t]
               .slice()
               .sort(function (a, b) {
-                return String(a.fullName || "").localeCompare(String(b.fullName || ""));
+                return compareCardLabels(a.fullName, b.fullName);
               })
               .map(studentCardHtml)
               .join("");
