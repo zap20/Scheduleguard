@@ -10,8 +10,9 @@
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/schedule-grid.css" />
+    <link rel="stylesheet" href="css/app.css?v=parse-card-1" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-8" />
   </head>
   <body>
     <div class="app-shell">
@@ -69,8 +70,8 @@
           </div>
         </form>
 
-        <div id="command-parse-card" class="conflict-panel" hidden style="margin-top: 1rem">
-          <p id="command-confirm-summary" style="margin: 0 0 0.75rem; font-weight: 600"></p>
+        <div id="command-parse-card" class="command-parse-card" hidden>
+          <p id="command-confirm-summary"></p>
           <dl id="command-parse-details" class="command-parse-details"></dl>
           <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem; margin-top: 0.75rem">
             <button type="button" class="btn btn-secondary" id="command-cancel-parse" style="width: auto">
@@ -353,7 +354,7 @@
     <script src="js/api.js"></script>
     <script src="js/shell.js"></script>
     <script src="js/attendance-common.js"></script>
-    <script src="js/schedule-grid.js"></script>
+    <script src="js/schedule-grid.js?v=meet-5"></script>
     <script src="js/schedules.js"></script>
   </body>
 </html>

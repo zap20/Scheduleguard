@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
+    <script src="js/theme-boot.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -78,6 +79,21 @@
       </section>
     </div>
 
+    <div id="qr-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="qr-modal-title">
+        <h3 id="qr-modal-title">Room QR</h3>
+        <p class="panel-sub" id="qr-modal-sub">Print and post this code at the room entrance for Checkers.</p>
+        <div id="qr-code" style="display:flex;justify-content:center;padding:12px 0"></div>
+        <p class="panel-sub" style="word-break:break-all">
+          Payload: <code id="qr-payload"></code>
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="qr-print" style="width: auto">Print</button>
+          <button type="button" class="btn" id="qr-close" style="width: auto; min-width: 100px">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div id="room-modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-labelledby="room-modal-title">
         <h3 id="room-modal-title">Add room</h3>
@@ -111,10 +127,11 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/attendance-common.js"></script>
     <script src="js/shell.js"></script>
-    <script src="js/rooms.js"></script>
+    <script src="js/rooms.js?v=qr-1"></script>
   </body>
 </html>

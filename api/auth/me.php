@@ -12,7 +12,7 @@ $auth = requireRoles([]);
 
 $stmt = db()->prepare(
     'SELECT uid, departmentId, firstName, lastName, email, role, phoneNumber, status, createdAt
-     FROM `user`
+     FROM userProfile
      WHERE uid = :uid
      LIMIT 1'
 );

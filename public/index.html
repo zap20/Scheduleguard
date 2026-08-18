@@ -11,10 +11,27 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
+    <script src="js/theme-boot.js"></script>
   </head>
   <body>
     <main class="auth-shell">
       <section class="auth-panel" aria-labelledby="brand">
+        <div class="brand-logos" aria-label="SEAIT and CICT">
+          <img
+            class="brand-logo brand-logo--seait"
+            src="img/seait-logo.png"
+            alt="South East Asian Institute of Technology"
+            width="72"
+            height="72"
+          />
+          <img
+            class="brand-logo brand-logo--cict"
+            src="img/cict-logo.png"
+            alt="College of Information and Communications Technology"
+            width="72"
+            height="72"
+          />
+        </div>
         <h1 id="brand" class="brand">ScheduleGuard</h1>
         <p class="tagline">
           Sign in to manage faculty schedules, attendance oversight, and academic clearance.
@@ -49,9 +66,11 @@
         </form>
 
         <p class="hint">
-          Seeded accounts use password <code>Password123!</code>
-          (e.g. <code>faculty@scheduleguard.test</code>,
-          <code>dean@scheduleguard.test</code>).
+          Demo password for all seeded accounts: <code>Password123!</code><br />
+          Dean: <code>cict.dean@scheduleguard.test</code><br />
+          Faculty: <code>cict.faculty01@scheduleguard.test</code><br />
+          Program Head: <code>cict.programhead@scheduleguard.test</code><br />
+          Checker: <code>checker@scheduleguard.test</code>
         </p>
       </section>
     </main>

@@ -70,3 +70,68 @@ function formatTermLabel(int $academicYear, string $semester): string
 {
     return sprintf('AY%d-%d · Sem %s', $academicYear, $academicYear + 1, $semester);
 }
+
+/**
+ * Attendance oversight period windows. Default is monthly.
+ *
+ * @return array{
+ *   period:string,
+ *   label:string,
+ *   dateFrom:string,
+ *   dateTo:string,
+ *   academicYear:?int,
+ *   semester:?string
+ * }
+ */
+function resolveAttendancePeriod(string $period = 'monthly'): array
+{
+    $period = strtolower(trim($period));
+    if (!in_array($period, ['daily', 'weekly', 'monthly', 'semester', 'year'], true)) {
+        $period = 'monthly';
+    }
+
+    $today = new DateTimeImmutable('today');
+    $term = currentTermWindow();
+
+    if ($period === 'daily') {
+        $from = $today;
+        $to = $today;
+        $label = 'Daily · ' . $today->format('M j, Y');
+    } elseif ($period === 'weekly') {
+        // ISO week: Monday–Sunday containing today.
+        $from = $today->modify('monday this week');
+        $to = $today->modify('sunday this week');
+        $label = 'Weekly · ' . $from->format('M j') . ' – ' . $to->format('M j, Y');
+    } elseif ($period === 'year') {
+        $from = $today->setDate((int) $today->format('Y'), 1, 1);
+        $to = $today->setDate((int) $today->format('Y'), 12, 31);
+        $label = 'Year · ' . $today->format('Y');
+    } elseif ($period === 'semester') {
+        try {
+            $from = new DateTimeImmutable($term['start']);
+        } catch (Exception) {
+            $from = $today->modify('first day of January this year');
+        }
+        try {
+            $to = new DateTimeImmutable($term['end']);
+        } catch (Exception) {
+            $to = $today->modify('last day of December this year');
+        }
+        $label = 'Semester · ' . formatTermLabel($term['academicYear'], $term['semester']);
+    } else {
+        // monthly (default)
+        $from = $today->modify('first day of this month');
+        $to = $today->modify('last day of this month');
+        $label = 'Monthly · ' . $today->format('F Y');
+        $period = 'monthly';
+    }
+
+    return [
+        'period' => $period,
+        'label' => $label,
+        'dateFrom' => $from->format('Y-m-d'),
+        'dateTo' => $to->format('Y-m-d'),
+        'academicYear' => $period === 'semester' ? $term['academicYear'] : null,
+        'semester' => $period === 'semester' ? $term['semester'] : null,
+    ];
+}

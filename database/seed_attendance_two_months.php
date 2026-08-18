@@ -3,14 +3,18 @@
 declare(strict_types=1);
 
 /**
- * Seed ~2 months of attendance for every Faculty.
+ * Seed attendance for every Faculty in a date window.
  *
- * - Ana Santos (user-cict-fac-01): exactly 8 hours Absent
- *   (4 × 2h class = 8h; full duration counted)
+ * - Ana Santos (user-cict-fac-01): up to 8 hours Absent (scaled down for short windows)
+ *   (2h Monday class × N weeks; full duration counted)
  * - Ben Garcia (user-cict-fac-02): complete attendance (all Present)
  * - Everyone else: mostly Present with occasional Late
  *
- * Usage: php database/seed_attendance_two_months.php
+ * Usage:
+ *   php database/seed_attendance_two_months.php
+ *   php database/seed_attendance_two_months.php 2026-08-03 14
+ *
+ * Args: [startDate YYYY-MM-DD] [days inclusive, default 60 ending today]
  */
 
 require_once dirname(__DIR__) . '/includes/helpers.php';
@@ -24,13 +28,23 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $academicYear = (int) (getenv('CURRENT_ACADEMIC_YEAR') ?: ($_ENV['CURRENT_ACADEMIC_YEAR'] ?? 2025));
 $semester = (string) (getenv('CURRENT_SEMESTER') ?: ($_ENV['CURRENT_SEMESTER'] ?? '1'));
 $checkerId = 'user-checker';
-$absentFacultyId = 'user-cict-fac-01'; // Ana Santos — 8h absent
+$absentFacultyId = 'user-cict-fac-01'; // Ana Santos — absent demo
 $perfectFacultyId = 'user-cict-fac-02'; // Ben Garcia — complete
 $graceMinutes = attendanceGraceMinutes();
 $graceHours = $graceMinutes / 60.0;
 
-$endDate = new DateTimeImmutable('today');
-$startDate = $endDate->modify('-60 days');
+$cliStart = isset($argv[1]) ? trim((string) $argv[1]) : '';
+$cliDays = isset($argv[2]) ? (int) $argv[2] : 0;
+
+if ($cliStart !== '') {
+    $startDate = new DateTimeImmutable($cliStart);
+    $dayCount = $cliDays > 0 ? $cliDays : 14;
+    // Inclusive window: start + (days - 1)
+    $endDate = $startDate->modify('+' . max(0, $dayCount - 1) . ' days');
+} else {
+    $endDate = new DateTimeImmutable('today');
+    $startDate = $endDate->modify('-60 days');
+}
 
 $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 $timeSlots = [
@@ -73,7 +87,7 @@ try {
 
     $faculty = $pdo->query(
         "SELECT uid, firstName, lastName, departmentId
-         FROM `user`
+         FROM userProfile
          WHERE role = 'Faculty' AND status = 'Active'
          ORDER BY lastName, firstName"
     )->fetchAll(PDO::FETCH_ASSOC);
@@ -94,7 +108,7 @@ try {
 
     foreach ($faculty as $fac) {
         $fid = $fac['uid'];
-        $deptId = $fac['departmentId'] ?: 'dept-comp';
+        $deptId = $fac['departmentId'] ?: 'dept-cict';
 
         $schedStmt = $pdo->prepare(
             'SELECT uid, day, startTime, endTime
@@ -129,10 +143,10 @@ try {
         $createdBy = $createdByCache[$deptId] ?? null;
         if ($createdBy === null) {
             $ph = $pdo->prepare(
-                "SELECT uid FROM `user` WHERE role = 'ProgramHead' AND departmentId = ? LIMIT 1"
+                "SELECT uid FROM userProfile WHERE role = 'ProgramHead' AND departmentId = ? LIMIT 1"
             );
             $ph->execute([$deptId]);
-            $createdBy = $ph->fetchColumn() ?: 'user-ph';
+            $createdBy = $ph->fetchColumn() ?: 'user-cict-ph';
             $createdByCache[$deptId] = $createdBy;
         }
 
@@ -302,7 +316,14 @@ try {
 
         usort($occurrences, static fn ($a, $b) => strcmp($a['timestamp'], $b['timestamp']));
 
-        $absentHoursTarget = $fid === $absentFacultyId ? 8.0 : 0.0;
+        // Cap absent demo at 8h, or whatever fits in this window (e.g. 2 weeks → 4h).
+        $windowBillable = 0.0;
+        foreach ($occurrences as $occ) {
+            $windowBillable += (float) $occ['billableHours'];
+        }
+        $absentHoursTarget = $fid === $absentFacultyId
+            ? min(8.0, $windowBillable)
+            : 0.0;
         $absentHoursUsed = 0.0;
         $counts = ['Present' => 0, 'Late' => 0, 'Absent' => 0];
         $absentHours = 0.0;
@@ -367,7 +388,7 @@ try {
     foreach ($summary as $row) {
         $tag = '';
         if ($row['uid'] === $absentFacultyId) {
-            $tag = '  << 8h ABSENT TARGET';
+            $tag = '  << ABSENT DEMO';
         } elseif ($row['uid'] === $perfectFacultyId) {
             $tag = '  << COMPLETE ATTENDANCE';
         }
@@ -395,14 +416,15 @@ try {
         }
     }
 
-    if ($ana === null || abs($ana['absentHours'] - 8.0) > 0.01) {
-        throw new RuntimeException('Ana Santos absent hours are not 8 (got ' . ($ana['absentHours'] ?? 'n/a') . ')');
+    if ($ana === null || (float) $ana['absentHours'] <= 0) {
+        throw new RuntimeException('Ana Santos has no absent hours (got ' . ($ana['absentHours'] ?? 'n/a') . ')');
     }
     if ($ben === null || $ben['Absent'] !== 0 || $ben['Late'] !== 0 || $ben['Present'] < 1) {
         throw new RuntimeException('Ben Garcia does not have complete Present attendance');
     }
 
     echo "\nOK: Ana Santos = {$ana['absentHours']}h absent; Ben Garcia = complete ({$ben['Present']} Present).\n";
+    echo "Window: {$startDate->format('Y-m-d')} → {$endDate->format('Y-m-d')}\n";
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

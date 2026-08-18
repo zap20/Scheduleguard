@@ -32,6 +32,9 @@ function mapEnrollmentRow(array $row): array
         'studentId' => (string) $row['studentId'],
         'studentName' => trim((string) $row['studentFirstName'] . ' ' . (string) $row['studentLastName']),
         'studentEmail' => (string) $row['studentEmail'],
+        'studentSchoolId' => (string) ($row['studentSchoolId'] ?? ''),
+        'studentYearLevel' => (string) ($row['studentYearLevel'] ?? ''),
+        'studentType' => (string) ($row['studentType'] ?? ''),
         'scheduleId' => (string) $row['scheduleId'],
         'subjectCode' => (string) ($row['subjectCode'] ?? ''),
         'subjectName' => (string) $row['subjectName'],
@@ -39,12 +42,17 @@ function mapEnrollmentRow(array $row): array
         'day' => (string) $row['day'],
         'startTime' => substr((string) $row['startTime'], 0, 5),
         'endTime' => substr((string) $row['endTime'], 0, 5),
-        'roomLabel' => (string) $row['roomBuilding'] . ' / ' . (string) $row['roomName'],
+        'roomLabel' => formatRoomDisplayLabel(
+            isset($row['roomBuilding']) ? (string) $row['roomBuilding'] : null,
+            isset($row['roomName']) ? (string) $row['roomName'] : null
+        ),
         'facultyId' => $facultyId,
         'facultyName' => $facultyName,
         'instructor' => $facultyName,
         'departmentId' => (string) $row['departmentId'],
         'departmentName' => (string) $row['departmentName'],
+        'academicYear' => isset($row['academicYear']) ? (int) $row['academicYear'] : 0,
+        'semester' => (string) ($row['semester'] ?? ''),
         'assignedBy' => (string) $row['assignedBy'],
         'assignedByName' => trim((string) $row['assignerFirstName'] . ' ' . (string) $row['assignerLastName']),
         'status' => (string) $row['status'],
@@ -71,12 +79,17 @@ function enrollmentSelectSql(): string
                 s.status AS scheduleStatus,
                 s.departmentId,
                 s.facultyId,
+                s.academicYear,
+                s.semester,
                 r.name AS roomName,
                 r.building AS roomBuilding,
                 d.name AS departmentName,
                 st.firstName AS studentFirstName,
                 st.lastName AS studentLastName,
                 st.email AS studentEmail,
+                st.schoolId AS studentSchoolId,
+                st.yearLevel AS studentYearLevel,
+                st.studentType AS studentType,
                 f.firstName AS facultyFirstName,
                 f.lastName AS facultyLastName,
                 a.firstName AS assignerFirstName,
@@ -86,7 +99,7 @@ function enrollmentSelectSql(): string
             INNER JOIN subject sub ON sub.uid = s.subjectId
             INNER JOIN room r ON r.uid = s.roomId
             INNER JOIN department d ON d.uid = s.departmentId
-            INNER JOIN `user` st ON st.uid = e.studentId
+            INNER JOIN userProfile st ON st.uid = e.studentId
             LEFT JOIN `user` f ON f.uid = s.facultyId
             INNER JOIN `user` a ON a.uid = e.assignedBy';
 }
@@ -119,7 +132,7 @@ function fetchPendingEnrollmentStudents(string $departmentId): array
                 u.email,
                 u.departmentId,
                 u.status
-            FROM `user` u
+            FROM userProfile u
             WHERE u.role = \'Student\'
               AND u.status = \'Active\'
               AND u.departmentId = :departmentId
@@ -228,7 +241,10 @@ function fetchConfirmedSchedulesForDepartment(string $departmentId): array
             'status' => (string) $row['status'],
             'departmentId' => (string) $row['departmentId'],
             'departmentName' => (string) $row['departmentName'],
-            'roomLabel' => (string) $row['roomBuilding'] . ' / ' . (string) $row['roomName'],
+            'roomLabel' => formatRoomDisplayLabel(
+            isset($row['roomBuilding']) ? (string) $row['roomBuilding'] : null,
+            isset($row['roomName']) ? (string) $row['roomName'] : null
+        ),
             'facultyId' => $facultyId,
             'facultyName' => $facultyName,
             'instructor' => $facultyName,
@@ -303,8 +319,8 @@ function fetchDistributedStudentSchedule(string $studentId): array
 }
 
 /**
- * Dean oversight: all distributed student schedules for the current term.
- * Optionally filter to one student.
+ * Dean oversight: enrolled student schedules for the current term
+ * (assigned or distributed). Optionally filter to one student.
  *
  * @return list<array<string,mixed>>
  */
@@ -312,12 +328,11 @@ function fetchDeanStudentSchedules(?string $studentId = null): array
 {
     $term = currentTermWindow();
     $sql = enrollmentSelectSql() . '
-        WHERE LOWER(e.status) = :status
+        WHERE LOWER(e.status) IN (\'assigned\', \'distributed\')
           AND LOWER(s.status) = \'confirmed\'
           AND s.academicYear = :academicYear
           AND s.semester = :semester';
     $params = [
-        ':status' => ENROLLMENT_STATUS_DISTRIBUTED,
         ':academicYear' => $term['academicYear'],
         ':semester' => $term['semester'],
     ];
@@ -351,7 +366,7 @@ function createEnrollment(string $studentId, string $scheduleId, string $assigne
     }
 
     $studentStmt = db()->prepare(
-        'SELECT uid, role, status, departmentId FROM `user` WHERE uid = :uid LIMIT 1'
+        'SELECT uid, role, status, departmentId FROM userProfile WHERE uid = :uid LIMIT 1'
     );
     $studentStmt->execute([':uid' => $studentId]);
     $student = $studentStmt->fetch();

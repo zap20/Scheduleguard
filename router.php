@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Router for PHP's built-in server:
- *   php -S 127.0.0.1:8765 router.php
+ *   php -S localhost:8765 router.php
  *
  * Serves /public as the site root and keeps /api available.
  */

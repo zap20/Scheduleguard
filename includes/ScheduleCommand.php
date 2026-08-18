@@ -491,6 +491,11 @@ function saveGeneratedScheduleOption(
     if ($assignments === []) {
         throw new InvalidArgumentException('Selected option has no assignments.');
     }
+    assertGeneratedAssignmentsHaveFreeRooms(
+        $assignments,
+        $term['academicYear'],
+        $term['semester']
+    );
 
     if ($preclaimedBlock !== null && !empty($preclaimedBlock['uid'])) {
         $block = [
@@ -579,6 +584,103 @@ function saveGeneratedScheduleOption(
  * @param array<string,mixed> $parsed
  * @return list<array<string,mixed>>
  */
+/**
+ * Human-readable reason when command generation yields no plans.
+ *
+ * @param array<string,mixed> $baseInput
+ * @param array<string,mixed> $parsed
+ */
+function diagnoseScheduleCommandFailure(array $baseInput, array $parsed): string
+{
+    $input = $baseInput;
+    $days = null;
+    if (!empty($parsed['days']) && is_array($parsed['days'])) {
+        $days = array_values(array_filter(
+            $parsed['days'],
+            static fn ($d): bool => is_string($d) && $d !== ''
+        ));
+        if ($days === []) {
+            $days = null;
+        }
+    }
+    $dayCount = $days !== null
+        ? count($days)
+        : (isset($parsed['dayCount']) && $parsed['dayCount'] !== null
+            ? max(1, min(7, (int) $parsed['dayCount']))
+            : null);
+    $input['allowedDays'] = $days;
+    $input['dayCount'] = $dayCount;
+
+    return diagnoseRoomAvailabilityByDay($input);
+}
+
+/**
+ * Reject generated options that lack a room or stack subjects into one room/time.
+ *
+ * @param list<array<string,mixed>> $assignments
+ */
+function assertGeneratedAssignmentsHaveFreeRooms(
+    array $assignments,
+    int $academicYear,
+    string $semester
+): void {
+    $n = count($assignments);
+    for ($i = 0; $i < $n; $i++) {
+        $roomId = trim((string) ($assignments[$i]['roomId'] ?? ''));
+        if ($roomId === '') {
+            $day = (string) ($assignments[$i]['day'] ?? '');
+            throw new InvalidArgumentException(
+                ($day !== '' ? "No room available on {$day} for the needed slot(s). " : '')
+                . 'Try another day or create a new room.'
+            );
+        }
+    }
+
+    for ($i = 0; $i < $n; $i++) {
+        for ($j = $i + 1; $j < $n; $j++) {
+            $a = $assignments[$i];
+            $b = $assignments[$j];
+            if (strcasecmp((string) ($a['day'] ?? ''), (string) ($b['day'] ?? '')) !== 0) {
+                continue;
+            }
+            if ((string) ($a['roomId'] ?? '') !== (string) ($b['roomId'] ?? '')) {
+                continue;
+            }
+            $aStart = normalizeScheduleTime((string) ($a['startTime'] ?? ''));
+            $aEnd = normalizeScheduleTime((string) ($a['endTime'] ?? ''));
+            $bStart = normalizeScheduleTime((string) ($b['startTime'] ?? ''));
+            $bEnd = normalizeScheduleTime((string) ($b['endTime'] ?? ''));
+            if ($aStart === null || $aEnd === null || $bStart === null || $bEnd === null) {
+                continue;
+            }
+            if ($aStart < $bEnd && $bStart < $aEnd) {
+                throw new InvalidArgumentException(
+                    sprintf(
+                        'Cannot place overlapping subjects in the same room on %s (%s–%s). '
+                        . 'Try another day or create a new room.',
+                        (string) $a['day'],
+                        $aStart,
+                        $aEnd
+                    )
+                );
+            }
+        }
+    }
+
+    // Re-check live DB for each slot (same rule as manual create).
+    foreach ($assignments as $assignment) {
+        assertRoomAvailableAt(
+            (string) $assignment['roomId'],
+            (string) $assignment['day'],
+            (string) $assignment['startTime'],
+            (string) $assignment['endTime'],
+            $academicYear,
+            $semester,
+            null
+        );
+    }
+}
+
 function generateScheduleCommandPlans(array $baseInput, array $parsed, int $planCount = 3): array
 {
     $blockCount = max(1, min(8, (int) ($parsed['blockCount'] ?? 1)));

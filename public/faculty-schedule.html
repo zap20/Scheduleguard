@@ -11,7 +11,8 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/schedule-grid.css" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-8" />
   </head>
   <body>
     <div class="app-shell">
@@ -31,11 +32,15 @@
             <h2>Weekly timetable</h2>
             <p class="panel-sub">
               Your teaching assignments for this semester — subject code and block for each class.
+              Teaching load = contact hours ÷ 3 (same as the Dean view).
             </p>
           </div>
-          <span class="term-chip" id="term-chip">…</span>
-          <div class="count-chip"><span id="result-count">0</span> subjects</div>
+          <div class="panel-head-actions">
+            <span class="term-chip" id="term-chip">…</span>
+            <div class="count-chip">Load <span id="result-count">0</span></div>
+          </div>
         </div>
+        <p id="load-summary" class="panel-sub" style="margin: 0 0 0.85rem"></p>
         <div id="schedule-alert" class="alert alert-error" role="alert"></div>
         <div id="schedule-grid"></div>
         <p id="schedule-empty" class="empty-state" hidden>
@@ -71,7 +76,7 @@
     <script src="js/api.js"></script>
     <script src="js/shell.js"></script>
     <script src="js/attendance-common.js"></script>
-    <script src="js/schedule-grid.js"></script>
-    <script src="js/faculty-schedule.js"></script>
+    <script src="js/schedule-grid.js?v=meet-5"></script>
+    <script src="js/faculty-schedule.js?v=load-sync-1"></script>
   </body>
 </html>

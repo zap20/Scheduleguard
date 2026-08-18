@@ -14,6 +14,20 @@
   const successEl = document.getElementById("enrollment-success");
   const blockSelect = document.getElementById("classBlockId");
   const studentSelect = document.getElementById("studentId");
+  const blocksCardsEl = document.getElementById("blocks-cards");
+  const blocksEmpty = document.getElementById("blocks-empty");
+  const blocksCardsView = document.getElementById("blocks-cards-view");
+  const blocksDetailView = document.getElementById("blocks-detail-view");
+  const blocksListPanel = document.getElementById("blocks-list-panel");
+  const enrollPanel = document.getElementById("enroll-panel");
+  const blockDetailTitle = document.getElementById("block-detail-title");
+  const blockDetailSub = document.getElementById("block-detail-sub");
+  const blockScheduleGrid = document.getElementById("block-schedule-grid");
+  const blockScheduleBody = document.getElementById("block-schedule-body");
+  const blockScheduleEmpty = document.getElementById("block-schedule-empty");
+
+  let blocksCache = [];
+  let currentBlockId = "";
 
   function escapeHtml(value) {
     return String(value)
@@ -40,6 +54,25 @@
     successEl.classList.remove("show");
   }
 
+  function instructorLabel(row) {
+    const name = (row.instructor || row.facultyName || "").trim();
+    return name !== "" ? name : "TBF";
+  }
+
+  function statusBadge(status) {
+    const s = String(status || "").toLowerCase();
+    let cls = "status-late";
+    if (s === "approved" || s === "confirmed" || s === "distributed") cls = "status-present";
+    if (s === "rejected" || s === "conflict") cls = "status-wrong";
+    return (
+      '<span class="status-badge ' +
+      cls +
+      '">' +
+      escapeHtml(status || "—") +
+      "</span>"
+    );
+  }
+
   function fillSelect(select, items, valueKey, labelFn, placeholder) {
     const keep = select.value;
     select.innerHTML = "";
@@ -54,6 +87,108 @@
       select.appendChild(opt);
     });
     if (keep) select.value = keep;
+  }
+
+  function blockCardHtml(row) {
+    const meetings = Number(row.scheduleCount) || 0;
+    const students = Number(row.memberCount) || 0;
+    const type = (row.studentType || "regular").toString();
+    const status =
+      meetings +
+      " meeting" +
+      (meetings === 1 ? "" : "s") +
+      " · " +
+      students +
+      " student" +
+      (students === 1 ? "" : "s") +
+      " · " +
+      type;
+    return (
+      '<button type="button" class="schedule-pick-card" data-block-id="' +
+      escapeHtml(row.uid) +
+      '" data-block-name="' +
+      escapeHtml(row.name) +
+      '">' +
+      '<span class="schedule-pick-card__eyebrow">' +
+      escapeHtml(row.yearLevel || "Class block") +
+      " · " +
+      escapeHtml(row.status || "Open") +
+      "</span>" +
+      '<span class="schedule-pick-card__title">' +
+      escapeHtml(row.name) +
+      "</span>" +
+      '<span class="schedule-pick-card__stat">' +
+      escapeHtml(status) +
+      "</span>" +
+      '<span class="schedule-pick-card__cta">Open block →</span>' +
+      "</button>"
+    );
+  }
+
+  function showBlocksCards() {
+    currentBlockId = "";
+    blockSelect.value = "";
+    blocksCardsView.hidden = false;
+    blocksDetailView.hidden = true;
+    blocksListPanel.hidden = true;
+    enrollPanel.hidden = true;
+    blockScheduleGrid.innerHTML = "";
+    blockScheduleBody.innerHTML = "";
+  }
+
+  function renderBlocks(list) {
+    blocksCache = list || [];
+    document.getElementById("blocks-count").textContent = String(blocksCache.length);
+
+    if (!currentBlockId) {
+      showBlocksCards();
+    }
+
+    if (!blocksCache.length) {
+      blocksCardsEl.className = "schedule-card-grid";
+      blocksCardsEl.innerHTML = "";
+      blocksEmpty.hidden = false;
+      return;
+    }
+    blocksEmpty.hidden = true;
+
+    const groups = {};
+    blocksCache.forEach(function (row) {
+      const key = row.yearLevel || "Other";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(row);
+    });
+    const order = Object.keys(groups).sort(function (a, b) {
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+
+    blocksCardsEl.className = "";
+    blocksCardsEl.innerHTML = order
+      .map(function (key) {
+        const cards = groups[key]
+          .slice()
+          .sort(function (a, b) {
+            return String(a.name || "").localeCompare(String(b.name || ""));
+          })
+          .map(blockCardHtml)
+          .join("");
+        return (
+          '<section class="room-grid-section">' +
+          '<h3 class="room-grid-section__label">' +
+          escapeHtml(key) +
+          "</h3>" +
+          '<div class="schedule-card-grid">' +
+          cards +
+          "</div></section>"
+        );
+      })
+      .join("");
+
+    blocksCardsEl.querySelectorAll(".schedule-pick-card").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        openBlock(btn.getAttribute("data-block-id"));
+      });
+    });
   }
 
   function renderMembers(members) {
@@ -78,9 +213,9 @@
           '<div class="cell-muted">' +
           escapeHtml(row.schoolId || "") +
           "</div></td>" +
-          "<td><span class=\"status-badge status-late\">" +
-          escapeHtml(row.status) +
-          "</span></td>" +
+          "<td>" +
+          statusBadge(row.status) +
+          "</td>" +
           "<td>" +
           escapeHtml(row.assignedByName) +
           "</td>" +
@@ -125,9 +260,9 @@
           "<div class=\"cell-muted\">" +
           escapeHtml(row.roomLabel) +
           "</div></td>" +
-          "<td><span class=\"status-badge status-late\">" +
-          escapeHtml(row.status) +
-          "</span></td>" +
+          "<td>" +
+          statusBadge(row.status) +
+          "</td>" +
           "<td><button type=\"button\" class=\"btn btn-small\" data-distribute=\"" +
           escapeHtml(row.uid) +
           "\">Distribute</button></td>" +
@@ -145,57 +280,124 @@
 
   async function loadBlocks() {
     const res = await Api.api("/class-blocks/list.php");
+    const term = res.data && res.data.term;
     document.getElementById("term-label").textContent =
-      (res.data.term && res.data.term.label) || "Current Term";
-    fillSelect(
-      blockSelect,
-      res.data.blocks || [],
-      "uid",
-      function (b) {
-        return (
-          b.name +
-          " · " +
-          b.memberCount +
-          " student(s) · " +
-          b.scheduleCount +
-          " class(es)"
-        );
-      },
-      "Select block…"
-    );
+      (term && (term.label || term.semester)) || "Current Term";
+    renderBlocks((res.data && res.data.blocks) || []);
   }
 
-  async function loadBlockDetails() {
-    const classBlockId = blockSelect.value;
-    if (!classBlockId) {
-      renderMembers([]);
-      fillSelect(studentSelect, [], "uid", function () {}, "Select student…");
-      document.getElementById("members-empty").hidden = false;
-      document.getElementById("members-empty").textContent =
-        "Select a class block to see its students, or add the first student above.";
-      return;
-    }
-    const res = await Api.api(
-      "/class-blocks/members.php?classBlockId=" + encodeURIComponent(classBlockId)
-    );
-    renderMembers(res.data.members || []);
-    fillSelect(
-      studentSelect,
-      res.data.availableStudents || [],
-      "uid",
-      function (s) {
-        return s.fullName + " (" + (s.schoolId || s.email) + ")";
-      },
-      "Select student…"
-    );
-    if (!(res.data.availableStudents || []).length) {
-      document.getElementById("members-empty").textContent =
-        (res.data.members || []).length
-          ? "All cleared students in your department are already in this block."
-          : "No cleared students available to add. Check Blocking clearance first.";
-      if (!(res.data.members || []).length) {
-        document.getElementById("members-empty").hidden = false;
+  async function openBlock(classBlockId) {
+    if (!classBlockId) return;
+    hideMessages();
+    currentBlockId = classBlockId;
+    blockSelect.value = classBlockId;
+
+    const meta = blocksCache.find(function (b) {
+      return String(b.uid) === String(classBlockId);
+    });
+
+    blocksCardsView.hidden = true;
+    blocksDetailView.hidden = false;
+    blocksListPanel.hidden = false;
+    enrollPanel.hidden = false;
+
+    blockDetailTitle.textContent = (meta && meta.name) || "Class block";
+    blockDetailSub.textContent = meta
+      ? (meta.yearLevel || "") +
+        " · " +
+        (meta.studentType || "regular") +
+        " · add Approved students only"
+      : "Add Approved students only (see Evaluation)";
+
+    blockScheduleGrid.innerHTML = "";
+    blockScheduleBody.innerHTML = "";
+    blockScheduleEmpty.hidden = true;
+
+    try {
+      const [schedRes, memberRes] = await Promise.all([
+        Api.api(
+          "/class-blocks/schedules.php?classBlockId=" +
+            encodeURIComponent(classBlockId)
+        ),
+        Api.api(
+          "/class-blocks/members.php?classBlockId=" +
+            encodeURIComponent(classBlockId)
+        ),
+      ]);
+
+      const rows = (schedRes.data && schedRes.data.schedules) || [];
+      if (!rows.length) {
+        blockScheduleEmpty.hidden = false;
+      } else {
+        blockScheduleGrid.innerHTML = window.renderScheduleGrid(
+          rows.map(function (row) {
+            const parts = [row.subjectCode, instructorLabel(row)];
+            const room = (row.roomName || row.roomLabel || "").trim();
+            if (room) parts.push(room);
+            return {
+              day: row.day,
+              startTime: row.startTime,
+              endTime: row.endTime,
+              label: parts.join(" · "),
+            };
+          })
+        );
+        blockScheduleBody.innerHTML = rows
+          .map(function (row) {
+            return (
+              "<tr>" +
+              "<td class=\"cell-strong\">" +
+              escapeHtml(row.subjectCode) +
+              '<div class="cell-muted">' +
+              escapeHtml(row.subjectName) +
+              "</div></td>" +
+              "<td>" +
+              escapeHtml(instructorLabel(row)) +
+              "</td>" +
+              "<td>" +
+              escapeHtml(row.day) +
+              "</td>" +
+              "<td>" +
+              escapeHtml(row.startTime) +
+              "–" +
+              escapeHtml(row.endTime) +
+              "</td>" +
+              "<td>" +
+              escapeHtml(row.roomLabel) +
+              "</td>" +
+              "<td>" +
+              statusBadge(row.status) +
+              "</td>" +
+              "</tr>"
+            );
+          })
+          .join("");
       }
+
+      renderMembers(memberRes.data.members || []);
+      fillSelect(
+        studentSelect,
+        memberRes.data.availableStudents || [],
+        "uid",
+        function (s) {
+          return (
+            s.fullName +
+            " · " +
+            (s.yearLevel || "?") +
+            " " +
+            (s.studentType || "Regular") +
+            " (" +
+            (s.schoolId || s.email) +
+            ")"
+          );
+        },
+        (memberRes.data.availableStudents || []).length
+          ? "Select approved student…"
+          : "No Approved students yet — use Evaluation first…"
+      );
+    } catch (err) {
+      showBlocksCards();
+      showError(err.message || "Unable to open class block.");
     }
   }
 
@@ -206,9 +408,23 @@
 
   async function reload() {
     hideMessages();
-    await loadBlocks();
-    await loadBlockDetails();
-    await loadAssigned();
+    const keepId = currentBlockId;
+    try {
+      await loadBlocks();
+    } catch (err) {
+      renderBlocks([]);
+      showError(err.message || "Unable to load class blocks.");
+      throw err;
+    }
+    if (keepId) {
+      await openBlock(keepId);
+    }
+    try {
+      await loadAssigned();
+    } catch (err) {
+      renderAssigned([]);
+      showError(err.message || "Unable to load assigned enrollments.");
+    }
   }
 
   async function distribute(uid) {
@@ -225,15 +441,17 @@
     }
   }
 
-  blockSelect.addEventListener("change", function () {
-    loadBlockDetails().catch(function (err) {
-      showError(err.message || "Unable to load block members.");
-    });
+  document.getElementById("blocks-back-to-cards").addEventListener("click", function () {
+    showBlocksCards();
   });
 
   document.getElementById("enroll-form").addEventListener("submit", async function (event) {
     event.preventDefault();
     hideMessages();
+    if (!blockSelect.value) {
+      showError("Open a class block card first.");
+      return;
+    }
     try {
       const res = await Api.api("/class-blocks/assign-student.php", {
         method: "POST",
@@ -251,7 +469,9 @@
       await reload();
     } catch (err) {
       const reason =
-        err.data && err.data.blockReason ? " Reason: " + err.data.blockReason : "";
+        err.payload && err.payload.blockReason
+          ? " " + err.payload.blockReason
+          : "";
       showError((err.message || "Add to block failed.") + reason);
     }
   });

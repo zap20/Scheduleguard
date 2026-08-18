@@ -9,7 +9,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-requireRoles(['Dean', 'ProgramHead', 'HR']);
+requireRoles(['Dean', 'ProgramHead', 'HR', 'Checker']);
 
 $roomType = isset($_GET['roomType']) ? trim((string) $_GET['roomType']) : '';
 $search = isset($_GET['q']) ? trim((string) $_GET['q']) : '';

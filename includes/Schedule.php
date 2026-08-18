@@ -6,11 +6,18 @@ require_once dirname(__DIR__) . '/config/database.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/Term.php';
 require_once __DIR__ . '/Subject.php';
+require_once __DIR__ . '/Room.php';
 
 const SCHEDULE_STATUS_DRAFT = 'draft';
 const SCHEDULE_STATUS_CONFLICT = 'conflict';
 const SCHEDULE_STATUS_CONFIRMED = 'confirmed';
 const SCHEDULE_INSTRUCTOR_TBF = 'TBF';
+
+/**
+ * Teaching load for one subject offering = total weekly hours ÷ 3
+ * (e.g. 5 hours → 5/3 ≈ 1.6667).
+ */
+const FACULTY_LOAD_HOURS_DIVISOR = 3.0;
 
 const SCHEDULE_DAYS = [
     'Monday',
@@ -22,6 +29,71 @@ const SCHEDULE_DAYS = [
     'Sunday',
 ];
 
+/**
+ * Load credit for a subject from lecture + lab hours.
+ */
+function subjectTeachingLoadFromHours(float $lectureHours, float $labHours): float
+{
+    $total = max(0.0, $lectureHours) + max(0.0, $labHours);
+    if ($total <= 0) {
+        return 0.0;
+    }
+
+    return round($total / FACULTY_LOAD_HOURS_DIVISOR, 4);
+}
+
+/**
+ * Faculty teaching load from schedule rows.
+ * Uses total scheduled contact hours ÷ 3 (matches weekly meetings on the grid).
+ *
+ * @param list<array<string,mixed>> $rows Schedule rows for one faculty
+ * @return array{subjectCount:int,offeringCount:int,load:float,contactHours:float,subjects:list<string>}
+ */
+function computeFacultyTeachingLoad(array $rows): array
+{
+    $subjects = [];
+    $offerings = [];
+    $contactMinutes = 0;
+
+    foreach ($rows as $row) {
+        $sid = trim((string) ($row['subjectId'] ?? ''));
+        $code = trim((string) ($row['subjectCode'] ?? ''));
+        $key = $sid !== '' ? $sid : ($code !== '' ? $code : '');
+        if ($key === '') {
+            continue;
+        }
+        $blockKey = trim((string) ($row['classBlockId'] ?? ''));
+        if ($blockKey === '') {
+            $blockKey = trim((string) ($row['blockName'] ?? '')) ?: 'default';
+        }
+        $offerKey = $key . '::' . $blockKey;
+        $subjects[$key] = $code !== '' ? $code : $key;
+        $offerings[$offerKey] = true;
+
+        $start = substr((string) ($row['startTime'] ?? ''), 0, 5);
+        $end = substr((string) ($row['endTime'] ?? ''), 0, 5);
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $start, $sm)
+            && preg_match('/^(\d{1,2}):(\d{2})$/', $end, $em)
+        ) {
+            $sMin = ((int) $sm[1]) * 60 + (int) $sm[2];
+            $eMin = ((int) $em[1]) * 60 + (int) $em[2];
+            if ($eMin > $sMin) {
+                $contactMinutes += $eMin - $sMin;
+            }
+        }
+    }
+
+    $contactHours = $contactMinutes / 60.0;
+    $load = $contactHours > 0 ? round($contactHours / FACULTY_LOAD_HOURS_DIVISOR, 2) : 0.0;
+
+    return [
+        'subjectCount' => count($subjects),
+        'offeringCount' => count($offerings),
+        'load' => $load,
+        'contactHours' => round($contactHours, 2),
+        'subjects' => array_values($subjects),
+    ];
+}
 /**
  * Empty / "TBF" → null (unassigned instructor).
  */
@@ -71,7 +143,10 @@ function mapScheduleRow(array $row): array
         'roomId' => (string) $row['roomId'],
         'roomName' => (string) $row['roomName'],
         'roomBuilding' => (string) $row['roomBuilding'],
-        'roomLabel' => (string) $row['roomBuilding'] . ' / ' . (string) $row['roomName'],
+        'roomLabel' => formatRoomDisplayLabel(
+            isset($row['roomBuilding']) ? (string) $row['roomBuilding'] : null,
+            isset($row['roomName']) ? (string) $row['roomName'] : null
+        ),
         'departmentId' => (string) $row['departmentId'],
         'departmentName' => (string) $row['departmentName'],
         'createdBy' => (string) $row['createdBy'],
@@ -81,6 +156,12 @@ function mapScheduleRow(array $row): array
         'subjectYearLevel' => (string) ($row['subjectYearLevel'] ?? ''),
         'subjectSemester' => (string) ($row['subjectSemester'] ?? ''),
         'subjectUnits' => isset($row['subjectUnits']) ? (float) $row['subjectUnits'] : null,
+        'lectureHours' => isset($row['subjectLectureHours']) ? (float) $row['subjectLectureHours'] : 0.0,
+        'labHours' => isset($row['subjectLabHours']) ? (float) $row['subjectLabHours'] : 0.0,
+        'subjectLoad' => subjectTeachingLoadFromHours(
+            isset($row['subjectLectureHours']) ? (float) $row['subjectLectureHours'] : 0.0,
+            isset($row['subjectLabHours']) ? (float) $row['subjectLabHours'] : 0.0
+        ),
         'day' => (string) $row['day'],
         'startTime' => substr((string) $row['startTime'], 0, 5),
         'endTime' => substr((string) $row['endTime'], 0, 5),
@@ -115,6 +196,8 @@ function scheduleSelectSql(): string
                 sub.yearLevel AS subjectYearLevel,
                 sub.semester AS subjectSemester,
                 sub.units AS subjectUnits,
+                sub.lectureHours AS subjectLectureHours,
+                sub.labHours AS subjectLabHours,
                 s.day,
                 s.startTime,
                 s.endTime,
@@ -313,7 +396,7 @@ function fetchFacultyOwnSchedules(string $facultyId): array
 }
 
 /**
- * Dean oversight: teaching schedules for the current term (confirmed + conflict).
+ * Dean oversight: teaching schedules for the current term (draft, confirmed, conflict).
  * Optionally filter by faculty and/or room. When faculty unfiltered, includes TBF rows.
  *
  * @return list<array<string,mixed>>
@@ -322,7 +405,7 @@ function fetchDeanFacultySchedules(?string $facultyId = null, ?string $roomId = 
 {
     $term = currentTermWindow();
     $sql = scheduleSelectSql() . '
-        WHERE LOWER(s.status) IN (\'confirmed\', \'conflict\')
+        WHERE LOWER(s.status) IN (\'draft\', \'confirmed\', \'conflict\')
           AND s.academicYear = :academicYear
           AND s.semester = :semester';
     $params = [
@@ -547,8 +630,19 @@ function assertSubjectExistsForSchedule(string $subjectId, string $departmentId)
     if ($subject === null) {
         throw new InvalidArgumentException('Subject not found.');
     }
-    if ((string) $subject['departmentId'] !== $departmentId) {
-        throw new InvalidArgumentException('Subject does not belong to the selected department.');
+    $owned = (string) $subject['departmentId'] === $departmentId;
+    $type = strtoupper((string) ($subject['subjectType'] ?? 'MAJOR'));
+    $servingId = $subject['servingDepartmentId'] ?? null;
+    $servingId = ($servingId !== null && $servingId !== '') ? (string) $servingId : null;
+    $servedHere = $servingId !== null && $servingId === $departmentId;
+    $servesElsewhere = $servingId !== null && $servingId !== $departmentId;
+
+    // Owned majors (not serving another dept), or any subject that Serves this dept.
+    $allowed = ($owned && $type === 'MAJOR' && !$servesElsewhere) || $servedHere;
+    if (!$allowed) {
+        throw new InvalidArgumentException(
+            'Subject is not available for the selected department (own major or Serves this department).'
+        );
     }
     if (strcasecmp((string) $subject['status'], SUBJECT_STATUS_ARCHIVED) === 0) {
         throw new InvalidArgumentException('Cannot schedule an archived subject.');
@@ -673,6 +767,151 @@ function assertRoomAvailableAt(
     );
 }
 
+function scheduleTimesOverlap(string $startA, string $endA, string $startB, string $endB): bool
+{
+    $a0 = normalizeScheduleTime($startA);
+    $a1 = normalizeScheduleTime($endA);
+    $b0 = normalizeScheduleTime($startB);
+    $b1 = normalizeScheduleTime($endB);
+    if ($a0 === null || $a1 === null || $b0 === null || $b1 === null) {
+        return false;
+    }
+    return $a0 < $b1 && $a1 > $b0;
+}
+
+function isRoomAvailableAt(
+    string $roomId,
+    string $day,
+    string $startTime,
+    string $endTime,
+    int $academicYear,
+    string $semester,
+    ?string $excludeScheduleId = null
+): bool {
+    try {
+        assertRoomAvailableAt(
+            $roomId,
+            $day,
+            $startTime,
+            $endTime,
+            $academicYear,
+            $semester,
+            $excludeScheduleId
+        );
+        return true;
+    } catch (InvalidArgumentException $e) {
+        return false;
+    }
+}
+
+/**
+ * Hard rule: faculty cannot be double-booked on overlapping day/time in the term.
+ *
+ * @param list<string>|null $excludeScheduleIds
+ */
+function assertFacultyAvailableAt(
+    ?string $facultyId,
+    string $day,
+    string $startTime,
+    string $endTime,
+    int $academicYear,
+    string $semester,
+    string|array|null $excludeScheduleIds = null
+): void {
+    $facultyId = normalizeAssignmentFacultyId($facultyId);
+    if ($facultyId === null) {
+        return; // TBF / unassigned — no faculty clash
+    }
+
+    $start = normalizeScheduleTime($startTime);
+    $end = normalizeScheduleTime($endTime);
+    if ($start === null || $end === null) {
+        throw new InvalidArgumentException('Invalid startTime/endTime for faculty availability check.');
+    }
+
+    $exclude = [];
+    if (is_string($excludeScheduleIds) && $excludeScheduleIds !== '') {
+        $exclude = [$excludeScheduleIds];
+    } elseif (is_array($excludeScheduleIds)) {
+        foreach ($excludeScheduleIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $exclude[] = $id;
+            }
+        }
+    }
+
+    $sql = 'SELECT s.uid,
+                   sub.code AS subjectCode,
+                   s.day,
+                   s.startTime,
+                   s.endTime,
+                   s.status,
+                   s.blockName,
+                   CONCAT(f.firstName, \' \', f.lastName) AS facultyName
+            FROM schedule s
+            INNER JOIN subject sub ON sub.uid = s.subjectId
+            INNER JOIN `user` f ON f.uid = s.facultyId
+            WHERE s.facultyId = :facultyId
+              AND s.academicYear = :academicYear
+              AND s.semester = :semester
+              AND LOWER(s.day) = LOWER(:day)
+              AND s.startTime < :endTime
+              AND s.endTime > :startTime
+              AND LOWER(s.status) IN (\'confirmed\', \'conflict\', \'draft\')';
+    $params = [
+        ':facultyId' => $facultyId,
+        ':academicYear' => $academicYear,
+        ':semester' => $semester,
+        ':day' => $day,
+        ':startTime' => $start . ':00',
+        ':endTime' => $end . ':00',
+    ];
+    if ($exclude !== []) {
+        $ph = [];
+        foreach ($exclude as $i => $id) {
+            $key = ':ex' . $i;
+            $ph[] = $key;
+            $params[$key] = $id;
+        }
+        $sql .= ' AND s.uid NOT IN (' . implode(',', $ph) . ')';
+    }
+    $sql .= ' ORDER BY s.startTime ASC LIMIT 3';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $hits = $stmt->fetchAll();
+    if ($hits === []) {
+        return;
+    }
+
+    $examples = [];
+    foreach ($hits as $hit) {
+        $block = trim((string) ($hit['blockName'] ?? ''));
+        $examples[] = sprintf(
+            '%s %s–%s (%s%s)',
+            (string) $hit['subjectCode'],
+            substr((string) $hit['startTime'], 0, 5),
+            substr((string) $hit['endTime'], 0, 5),
+            (string) $hit['status'],
+            $block !== '' ? ', ' . $block : ''
+        );
+    }
+
+    $name = trim((string) ($hits[0]['facultyName'] ?? ''));
+    throw new InvalidArgumentException(
+        sprintf(
+            'Faculty %s is not available on %s %s–%s. Already teaching: %s. '
+            . 'Choose another faculty, day, or time.',
+            $name !== '' ? $name : $facultyId,
+            $day,
+            $start,
+            $end,
+            implode('; ', $examples)
+        )
+    );
+}
+
 function assertDepartmentExistsForSchedule(string $departmentId): void
 {
     $stmt = db()->prepare('SELECT uid FROM department WHERE uid = :uid LIMIT 1');
@@ -707,6 +946,14 @@ function createDraftSchedule(array $data, string $createdBy): array
 {
     assertRoomAvailableAt(
         (string) $data['roomId'],
+        (string) $data['day'],
+        (string) $data['startTime'],
+        (string) $data['endTime'],
+        (int) $data['academicYear'],
+        (string) $data['semester']
+    );
+    assertFacultyAvailableAt(
+        isset($data['facultyId']) ? (string) $data['facultyId'] : null,
         (string) $data['day'],
         (string) $data['startTime'],
         (string) $data['endTime'],
@@ -761,6 +1008,15 @@ function updateScheduleFields(string $scheduleId, array $data): array
 {
     assertRoomAvailableAt(
         (string) $data['roomId'],
+        (string) $data['day'],
+        (string) $data['startTime'],
+        (string) $data['endTime'],
+        (int) $data['academicYear'],
+        (string) $data['semester'],
+        $scheduleId
+    );
+    assertFacultyAvailableAt(
+        isset($data['facultyId']) ? (string) $data['facultyId'] : null,
         (string) $data['day'],
         (string) $data['startTime'],
         (string) $data['endTime'],
@@ -1031,6 +1287,11 @@ function parseScheduleCsv(string $path): array
  */
 function parseScheduleXlsx(string $path): array
 {
+    if (!class_exists(ZipArchive::class, false)) {
+        throw new InvalidArgumentException(
+            'PHP zip extension is not enabled. In C:\\xampp\\php\\php.ini uncomment extension=zip, then restart Apache.'
+        );
+    }
     $zip = new ZipArchive();
     if ($zip->open($path) !== true) {
         throw new InvalidArgumentException('Unable to open XLSX file.');
@@ -1137,4 +1398,306 @@ function xlsxColumnIndex(string $letters): int
         $n = $n * 26 + (ord($letters[$i]) - 64);
     }
     return $n;
+}
+
+/**
+ * Re-assign later same-room overlapping meetings to a free room/time/day (7:00 AM–9:00 PM).
+ * Keeps the earlier meeting; moves the later one — prefers another room same day, then another day.
+ *
+ * @return array{
+ *   moved:list<array<string,mixed>>,
+ *   failed:list<array<string,mixed>>,
+ *   kept:int,
+ *   pairsFound:int
+ * }
+ */
+function reassignSameRoomOverlapsForCurrentTerm(): array
+{
+    require_once __DIR__ . '/Room.php';
+
+    $term = currentTermWindow();
+    $stmt = db()->prepare(
+        "SELECT s.uid,
+                s.facultyId,
+                s.roomId,
+                s.departmentId,
+                s.subjectId,
+                s.day,
+                s.startTime,
+                s.endTime,
+                s.academicYear,
+                s.semester,
+                s.status,
+                s.blockName,
+                s.createdAt,
+                sub.code AS subjectCode,
+                r.building,
+                r.name AS roomName
+         FROM schedule s
+         INNER JOIN subject sub ON sub.uid = s.subjectId
+         INNER JOIN room r ON r.uid = s.roomId
+         WHERE s.academicYear = :academicYear
+           AND s.semester = :semester
+           AND LOWER(s.status) IN ('confirmed', 'conflict', 'draft')
+           AND s.roomId IS NOT NULL
+           AND s.roomId <> ''
+         ORDER BY r.building, r.name,
+                  FIELD(s.day, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'),
+                  s.startTime ASC,
+                  s.createdAt ASC,
+                  s.uid ASC"
+    );
+    $stmt->execute([
+        ':academicYear' => $term['academicYear'],
+        ':semester' => $term['semester'],
+    ]);
+    $rows = $stmt->fetchAll();
+
+    $overlap = static function (array $a, array $b): bool {
+        if (strcasecmp((string) $a['day'], (string) $b['day']) !== 0) {
+            return false;
+        }
+        if ((string) $a['roomId'] !== (string) $b['roomId']) {
+            return false;
+        }
+        return $a['startTime'] < $b['endTime'] && $b['startTime'] < $a['endTime'];
+    };
+
+    $toMove = [];
+    $pairsFound = 0;
+    $n = count($rows);
+    for ($i = 0; $i < $n; $i++) {
+        for ($j = $i + 1; $j < $n; $j++) {
+            if (!$overlap($rows[$i], $rows[$j])) {
+                continue;
+            }
+            $pairsFound++;
+            // Keep earlier row ($i is earlier by sort); move later ($j).
+            $toMove[(string) $rows[$j]['uid']] = $rows[$j];
+        }
+    }
+
+    if ($toMove === []) {
+        return ['moved' => [], 'failed' => [], 'kept' => $n, 'pairsFound' => 0];
+    }
+
+    $rooms = fetchRooms();
+    $moved = [];
+    $failed = [];
+
+    foreach ($toMove as $row) {
+        $uid = (string) $row['uid'];
+        $day = (string) $row['day'];
+        $start = substr((string) $row['startTime'], 0, 5);
+        $end = substr((string) $row['endTime'], 0, 5);
+        $startMin = ((int) substr($start, 0, 2)) * 60 + (int) substr($start, 3, 2);
+        $endMin = ((int) substr($end, 0, 2)) * 60 + (int) substr($end, 3, 2);
+        $duration = max(30, $endMin - $startMin);
+
+        $candidate = findFreeRoomSlotForReassign(
+            $rooms,
+            $day,
+            $duration,
+            (int) $row['academicYear'],
+            (string) $row['semester'],
+            $uid,
+            $start,
+            $end
+        );
+
+        if ($candidate === null) {
+            $failed[] = [
+                'uid' => $uid,
+                'subjectCode' => (string) $row['subjectCode'],
+                'day' => $day,
+                'from' => trim((string) $row['building'] . ' / ' . (string) $row['roomName']),
+                'reason' => 'No free room/time on any day between 7:00 AM and 9:00 PM.',
+            ];
+            continue;
+        }
+
+        try {
+            updateScheduleFields($uid, [
+                'facultyId' => $row['facultyId'],
+                'roomId' => $candidate['roomId'],
+                'departmentId' => (string) $row['departmentId'],
+                'subjectId' => (string) $row['subjectId'],
+                'day' => $candidate['day'],
+                'startTime' => $candidate['startTime'],
+                'endTime' => $candidate['endTime'],
+                'academicYear' => (int) $row['academicYear'],
+                'semester' => (string) $row['semester'],
+            ]);
+            $confirm = attemptConfirmSchedule($uid);
+            $moved[] = [
+                'uid' => $uid,
+                'subjectCode' => (string) $row['subjectCode'],
+                'day' => $day,
+                'from' => trim((string) $row['building'] . ' / ' . (string) $row['roomName'])
+                    . ' ' . $day . ' ' . $start . '–' . $end,
+                'to' => $candidate['roomLabel']
+                    . ' ' . $candidate['day'] . ' '
+                    . $candidate['startTime'] . '–' . $candidate['endTime'],
+                'status' => (string) ($confirm['schedule']['status'] ?? 'draft'),
+            ];
+        } catch (Throwable $e) {
+            $failed[] = [
+                'uid' => $uid,
+                'subjectCode' => (string) $row['subjectCode'],
+                'day' => $day,
+                'from' => trim((string) $row['building'] . ' / ' . (string) $row['roomName']),
+                'reason' => $e->getMessage(),
+            ];
+        }
+    }
+
+    return [
+        'moved' => $moved,
+        'failed' => $failed,
+        'kept' => $n - count($toMove),
+        'pairsFound' => $pairsFound,
+    ];
+}
+
+/**
+ * Find a free room slot for an overlapping meeting.
+ * Order: same day+time other room → same day other time → other days (7:00 AM–9:00 PM).
+ *
+ * @param list<array<string,mixed>> $rooms
+ * @return array{roomId:string,roomLabel:string,day:string,startTime:string,endTime:string}|null
+ */
+function findFreeRoomSlotForReassign(
+    array $rooms,
+    string $day,
+    int $durationMinutes,
+    int $academicYear,
+    string $semester,
+    string $excludeScheduleId,
+    string $preferredStart,
+    string $preferredEnd
+): ?array {
+    $dayStart = 7 * 60;
+    $dayEnd = 21 * 60;
+    $weekDays = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+    ];
+
+    $trySlot = static function (
+        string $tryDay,
+        string $roomId,
+        string $roomLabel,
+        string $start,
+        string $end
+    ) use ($academicYear, $semester, $excludeScheduleId): ?array {
+        try {
+            assertRoomAvailableAt(
+                $roomId,
+                $tryDay,
+                $start,
+                $end,
+                $academicYear,
+                $semester,
+                $excludeScheduleId
+            );
+            return [
+                'roomId' => $roomId,
+                'roomLabel' => $roomLabel,
+                'day' => $tryDay,
+                'startTime' => $start,
+                'endTime' => $end,
+            ];
+        } catch (InvalidArgumentException $e) {
+            return null;
+        }
+    };
+
+    $searchDay = static function (string $tryDay, bool $skipPreferredTime) use (
+        $rooms,
+        $durationMinutes,
+        $dayStart,
+        $dayEnd,
+        $preferredStart,
+        $preferredEnd,
+        $trySlot
+    ): ?array {
+        // Preferred clock time first (unless skipped for "other times" pass).
+        if (!$skipPreferredTime) {
+            foreach ($rooms as $room) {
+                $hit = $trySlot(
+                    $tryDay,
+                    (string) $room['uid'],
+                    (string) ($room['label'] ?? $room['uid']),
+                    $preferredStart,
+                    $preferredEnd
+                );
+                if ($hit !== null) {
+                    return $hit;
+                }
+            }
+        }
+
+        for ($t = $dayStart; $t + $durationMinutes <= $dayEnd; $t += 30) {
+            if ($t < 12 * 60 && ($t + $durationMinutes) > 13 * 60) {
+                continue;
+            }
+            $start = sprintf('%02d:%02d', intdiv($t, 60), $t % 60);
+            $endMin = $t + $durationMinutes;
+            $end = sprintf('%02d:%02d', intdiv($endMin, 60), $endMin % 60);
+            if ($start === $preferredStart && $end === $preferredEnd) {
+                continue;
+            }
+            foreach ($rooms as $room) {
+                $hit = $trySlot(
+                    $tryDay,
+                    (string) $room['uid'],
+                    (string) ($room['label'] ?? $room['uid']),
+                    $start,
+                    $end
+                );
+                if ($hit !== null) {
+                    return $hit;
+                }
+            }
+        }
+        return null;
+    };
+
+    // 1–2) Same day first.
+    $sameDay = $searchDay($day, false);
+    if ($sameDay !== null) {
+        return $sameDay;
+    }
+
+    // 3) Other days — prefer Saturday/Sunday after weekdays for Mon conflicts, etc.
+    $otherDays = [];
+    foreach ($weekDays as $d) {
+        if (strcasecmp($d, $day) !== 0) {
+            $otherDays[] = $d;
+        }
+    }
+    // Prefer weekend when leaving a weekday (common Mon/Sat pattern).
+    usort($otherDays, static function (string $a, string $b) use ($day): int {
+        $weekend = static fn (string $d): int => in_array($d, ['Saturday', 'Sunday'], true) ? 0 : 1;
+        $wa = $weekend($a);
+        $wb = $weekend($b);
+        if ($wa !== $wb && !in_array($day, ['Saturday', 'Sunday'], true)) {
+            return $wa <=> $wb;
+        }
+        return 0;
+    });
+
+    foreach ($otherDays as $otherDay) {
+        $hit = $searchDay($otherDay, false);
+        if ($hit !== null) {
+            return $hit;
+        }
+    }
+
+    return null;
 }

@@ -54,7 +54,7 @@
   }
 
   function formatSlotRange(startMin, endMin) {
-    return minutesToLabel(startMin) + " - " + minutesToLabel(endMin);
+    return minutesToLabel(startMin) + "–" + minutesToLabel(endMin);
   }
 
   /**
@@ -160,6 +160,12 @@
         start: start,
         end: end,
         label: raw.label == null ? "" : String(raw.label),
+        scheduleId:
+          raw.scheduleId != null
+            ? String(raw.scheduleId)
+            : raw.uid != null
+              ? String(raw.uid)
+              : "",
         meta: raw,
       });
     });
@@ -197,6 +203,10 @@
     });
 
     blocks.forEach(function (block) {
+      const item = {
+        label: block.label,
+        scheduleId: block.scheduleId == null ? "" : String(block.scheduleId),
+      };
       const startIdx = slotIndexByStart[block.start];
       if (startIdx === undefined) return;
       const rowspan = Math.max(1, (block.end - block.start) / 30);
@@ -226,7 +236,8 @@
       if (!conflict) {
         map[startIdx] = {
           kind: "start",
-          labels: [block.label],
+          labels: [item.label],
+          items: [item],
           rowspan: rowspan,
           overlap: false,
         };
@@ -242,7 +253,8 @@
         // Fallback: force a start at this slot.
         map[startIdx] = {
           kind: "start",
-          labels: [block.label],
+          labels: [item.label],
+          items: [item],
           rowspan: rowspan,
           overlap: true,
         };
@@ -252,7 +264,9 @@
         return;
       }
 
-      host.labels.push(block.label);
+      host.labels.push(item.label);
+      host.items = host.items || [];
+      host.items.push(item);
       host.overlap = true;
       const hostEnd = hostIdx + host.rowspan;
       const neededEnd = Math.max(hostEnd, endIdx);
@@ -261,6 +275,7 @@
           if (map[i].kind === "start") {
             // Absorb another block's labels if we extend over it.
             host.labels = host.labels.concat(map[i].labels || []);
+            host.items = (host.items || []).concat(map[i].items || []);
             host.overlap = true;
           }
           map[i] = { kind: "covered" };
@@ -359,7 +374,9 @@
     const dayMaps = placeBlocks(blocks, slots);
 
     const wrapClass =
-      "schedule-grid-wrap" + (options.compact ? " is-compact" : "");
+      "schedule-grid-wrap" +
+      (options.compact ? " is-compact" : "") +
+      (options.clickable ? " is-clickable" : "");
     const tableClass =
       "schedule-grid" + (options.compact ? " is-compact" : "");
 
@@ -372,7 +389,11 @@
         escapeHtml(minutesToLabel(rangeEnd)) +
         " · " +
         blocks.length +
-        " block(s)</p>";
+        " meeting(s)</p>";
+    }
+    if (options.clickable && options.clickHint !== false) {
+      html +=
+        '<p class="schedule-grid-hint">Click a class to remove that load (whole subject + block).</p>';
     }
 
     html += '<div class="' + wrapClass + '"><table class="' + tableClass + '">';
@@ -402,9 +423,27 @@
           if (cell.overlap) {
             html += '<span class="sg-overlap-flag">Overlap</span>';
           }
-          cell.labels.forEach(function (label) {
-            html +=
-              '<span class="sg-block-label">' + escapeHtml(label) + "</span>";
+          const items =
+            cell.items && cell.items.length
+              ? cell.items
+              : (cell.labels || []).map(function (label) {
+                  return { label: label, scheduleId: "" };
+                });
+          items.forEach(function (item) {
+            const sid = item.scheduleId ? String(item.scheduleId) : "";
+            if (options.clickable && sid) {
+              html +=
+                '<button type="button" class="sg-block-label is-action" data-schedule-id="' +
+                escapeHtml(sid) +
+                '" title="Remove this load">' +
+                escapeHtml(item.label) +
+                "</button>";
+            } else {
+              html +=
+                '<span class="sg-block-label">' +
+                escapeHtml(item.label) +
+                "</span>";
+            }
           });
           html += "</td>";
           return;
@@ -434,9 +473,76 @@
     return el;
   }
 
+  /**
+   * Bind clicks on removable block labels. Handler receives { scheduleId, label }.
+   */
+  function bindScheduleGridClicks(container, handler) {
+    const el =
+      typeof container === "string"
+        ? document.querySelector(container)
+        : container;
+    if (!el || typeof handler !== "function") return;
+    el.addEventListener("click", function (ev) {
+      const btn = ev.target && ev.target.closest
+        ? ev.target.closest(".sg-block-label.is-action")
+        : null;
+      if (!btn || !el.contains(btn)) return;
+      const scheduleId = btn.getAttribute("data-schedule-id") || "";
+      if (!scheduleId) return;
+      handler({
+        scheduleId: scheduleId,
+        label: (btn.textContent || "").trim(),
+      });
+    });
+  }
+
+  function formatScheduleRoom(row) {
+    if (!row || typeof row !== "object") return "";
+    const building = String(row.roomBuilding || "").trim();
+    const name = String(row.roomName || "").trim();
+    const label = String(row.roomLabel || "").trim();
+    if (/^(CL|MST|JST)$/i.test(building) && name) {
+      return building.toUpperCase() + " " + name;
+    }
+    if (/^GYM$/i.test(name) || /^GYM$/i.test(building) || /^GYM$/i.test(label)) {
+      return "GYM";
+    }
+    if (label && label !== "/") {
+      return label.replace(/^Campus\s*\/\s*/i, "");
+    }
+    return name || building || "";
+  }
+
+  /**
+   * Excel-style cell: subject on the first line, room on the second
+   * (the right-hand column in the BSIT workbook).
+   */
+  function meetingGridLabel(row, options) {
+    options = options || {};
+    const subject =
+      String(
+        options.excelStyle
+          ? row.subjectName || row.subjectCode || "Subject"
+          : row.subjectCode || row.subjectName || "Subject"
+      ).trim();
+    let top = subject;
+    if (options.includeInstructor) {
+      const inst = String(row.instructor || row.facultyName || "").trim() || "TBF";
+      top += " · " + inst;
+    }
+    if (options.includeBlock && row.blockName) {
+      top += " · " + String(row.blockName).trim();
+    }
+    const room = formatScheduleRoom(row);
+    return room ? top + "\n" + room : top;
+  }
+
   window.ScheduleGrid = {
     renderScheduleGrid: renderScheduleGrid,
     mountScheduleGrid: mountScheduleGrid,
+    bindScheduleGridClicks: bindScheduleGridClicks,
+    formatScheduleRoom: formatScheduleRoom,
+    meetingGridLabel: meetingGridLabel,
     DAY_ORDER: DAY_ORDER.slice(),
   };
 

@@ -8,6 +8,7 @@ require_once __DIR__ . '/Term.php';
 require_once __DIR__ . '/Subject.php';
 require_once __DIR__ . '/Blocking.php';
 require_once __DIR__ . '/Enrollment.php';
+require_once __DIR__ . '/StudentEvaluation.php';
 
 const CLASS_BLOCK_STATUS_OPEN = 'Open';
 const CLASS_BLOCK_STATUS_CLOSED = 'Closed';
@@ -242,6 +243,90 @@ function createClassBlock(array $input, string $createdBy): array
 }
 
 /**
+ * @return array<string,mixed>|null
+ */
+function findClassBlockBySlot(
+    string $departmentId,
+    string $yearLevel,
+    int $academicYear,
+    string $semester,
+    int $blockNumber
+): ?array {
+    $stmt = db()->prepare(
+        classBlockSelectSql() . '
+         WHERE cb.departmentId = :departmentId
+           AND cb.yearLevel = :yearLevel
+           AND cb.academicYear = :academicYear
+           AND cb.semester = :semester
+           AND cb.blockNumber = :blockNumber
+         LIMIT 1'
+    );
+    $stmt->execute([
+        ':departmentId' => $departmentId,
+        ':yearLevel' => $yearLevel,
+        ':academicYear' => $academicYear,
+        ':semester' => $semester,
+        ':blockNumber' => $blockNumber,
+    ]);
+    $row = $stmt->fetch();
+    return $row ? mapClassBlockRow($row) : null;
+}
+
+/**
+ * Reuse an existing term slot or create one for a student-block workbook import.
+ *
+ * @return array<string,mixed>
+ */
+function ensureImportedClassBlock(
+    string $departmentId,
+    string $yearLevel,
+    int $blockNumber,
+    string $name,
+    int $academicYear,
+    string $semester,
+    string $createdBy,
+    string $studentType = 'regular'
+): array {
+    $existing = findClassBlockBySlot(
+        $departmentId,
+        $yearLevel,
+        $academicYear,
+        $semester,
+        $blockNumber
+    );
+    if ($existing !== null) {
+        return $existing;
+    }
+
+    try {
+        return createClassBlock([
+            'departmentId' => $departmentId,
+            'yearLevel' => $yearLevel,
+            'blockNumber' => $blockNumber,
+            'name' => $name,
+            'academicYear' => $academicYear,
+            'semester' => $semester,
+            'studentType' => $studentType,
+        ], $createdBy);
+    } catch (InvalidArgumentException $e) {
+        if (!str_contains($e->getMessage(), 'already exists')) {
+            throw $e;
+        }
+        $again = findClassBlockBySlot(
+            $departmentId,
+            $yearLevel,
+            $academicYear,
+            $semester,
+            $blockNumber
+        );
+        if ($again === null) {
+            throw $e;
+        }
+        return $again;
+    }
+}
+
+/**
  * Preview the next block slot without creating a row.
  * Matches ensureNextClassBlock reuse rules (empty Open blocks first).
  *
@@ -463,20 +548,32 @@ function fetchStudentsAvailableForClassBlock(string $classBlockId, string $depar
         throw new InvalidArgumentException('Class block is outside your department.');
     }
 
-    $sql = 'SELECT u.uid, u.firstName, u.lastName, u.email, u.schoolId, u.departmentId
-            FROM `user` u
+    $sql = 'SELECT u.uid, u.firstName, u.lastName, u.email, u.schoolId, u.departmentId,
+                   u.yearLevel, u.studentType, u.enrollmentEvalStatus
+            FROM userProfile u
             WHERE u.role = \'Student\'
               AND u.status = \'Active\'
               AND u.departmentId = :departmentId
+              AND u.yearLevel = :yearLevel
+              AND u.studentType = :studentType
+              AND COALESCE(NULLIF(u.enrollmentEvalStatus, \'\'), \'Pending\') = \'Approved\'
               AND NOT EXISTS (
                     SELECT 1 FROM classBlockMember m
                     WHERE m.classBlockId = :classBlockId AND m.studentId = u.uid
               )
             ORDER BY u.lastName ASC, u.firstName ASC';
+    $blockStudentType = trim((string) ($block['studentType'] ?? ''));
+    if ($blockStudentType === '') {
+        $blockStudentType = 'Regular';
+    } else {
+        $blockStudentType = strcasecmp($blockStudentType, 'irregular') === 0 ? 'Irregular' : 'Regular';
+    }
     $stmt = db()->prepare($sql);
     $stmt->execute([
         ':departmentId' => $departmentId,
         ':classBlockId' => $classBlockId,
+        ':yearLevel' => $block['yearLevel'],
+        ':studentType' => $blockStudentType,
     ]);
 
     $out = [];
@@ -492,6 +589,9 @@ function fetchStudentsAvailableForClassBlock(string $classBlockId, string $depar
             'email' => (string) $row['email'],
             'schoolId' => (string) ($row['schoolId'] ?? ''),
             'departmentId' => (string) $row['departmentId'],
+            'yearLevel' => (string) ($row['yearLevel'] ?? ''),
+            'studentType' => (string) ($row['studentType'] ?? ''),
+            'enrollmentEvalStatus' => (string) ($row['enrollmentEvalStatus'] ?? ENROLLMENT_EVAL_PENDING),
             'fullName' => trim((string) $row['firstName'] . ' ' . (string) $row['lastName']),
         ];
     }
@@ -523,9 +623,15 @@ function assignStudentToClassBlock(string $classBlockId, string $studentId, stri
         $reason = $hold['reason'] ?? 'Student has an active block.';
         throw new DomainException('NOT_CLEARED:' . $reason);
     }
+    if (!isStudentEnrollmentApproved($studentId)) {
+        throw new DomainException(
+            'NOT_EVALUATED:Program Head must evaluate and Approve this student before assigning a class block.'
+        );
+    }
 
     $studentStmt = db()->prepare(
-        'SELECT uid, role, status, departmentId FROM `user` WHERE uid = :uid LIMIT 1'
+        'SELECT uid, role, status, departmentId, yearLevel, studentType
+         FROM userProfile WHERE uid = :uid LIMIT 1'
     );
     $studentStmt->execute([':uid' => $studentId]);
     $student = $studentStmt->fetch();
@@ -537,6 +643,28 @@ function assignStudentToClassBlock(string $classBlockId, string $studentId, stri
     }
     if ((string) $student['departmentId'] !== (string) $block['departmentId']) {
         throw new InvalidArgumentException('Student and class block must belong to the same department.');
+    }
+    $blockYear = (string) ($block['yearLevel'] ?? '');
+    $studentYear = trim((string) ($student['yearLevel'] ?? ''));
+    if ($blockYear !== '' && $studentYear !== $blockYear) {
+        throw new InvalidArgumentException(
+            sprintf('Only %s students can join this block (student is %s).', $blockYear, $studentYear !== '' ? $studentYear : 'unset')
+        );
+    }
+    $blockType = trim((string) ($block['studentType'] ?? ''));
+    if ($blockType === '') {
+        $blockType = 'Regular';
+    } else {
+        $blockType = strcasecmp($blockType, 'irregular') === 0 ? 'Irregular' : 'Regular';
+    }
+    $studentType = trim((string) ($student['studentType'] ?? ''));
+    if ($studentType === '') {
+        $studentType = 'Regular';
+    }
+    if (strcasecmp($studentType, $blockType) !== 0) {
+        throw new InvalidArgumentException(
+            sprintf('Only %s students can join this block (student is %s).', $blockType, $studentType)
+        );
     }
 
     $dup = db()->prepare(

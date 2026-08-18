@@ -1,171 +1,348 @@
-/* Reusable weekly schedule grid */
+/* Reusable weekly schedule grid + faculty/room pick cards */
 
 .schedule-grid-wrap {
   width: 100%;
-  overflow-x: auto;
-  border: 1px solid rgba(16, 35, 63, 0.12);
-  border-radius: 14px;
-  background: #fff;
-  zoom: 0.5;
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  isolation: isolate;
 }
 
 .schedule-grid {
   width: 100%;
-  min-width: 860px;
-  border-collapse: collapse;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   font-family: "Figtree", "Segoe UI", sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.68rem;
+  color: var(--ink);
 }
 
 .schedule-grid th,
 .schedule-grid td {
-  border: 1px solid rgba(16, 35, 63, 0.1);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   vertical-align: top;
+  overflow: hidden;
+}
+
+.schedule-grid th:last-child,
+.schedule-grid td:last-child {
+  border-right: none;
 }
 
 .schedule-grid thead th {
   position: sticky;
   top: 0;
-  z-index: 2;
-  background: #f3f6f8;
-  color: #3a4d68;
-  font-size: 0.78rem;
+  z-index: 3;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, var(--brand, #0b6e6e) 12%);
+  color: var(--ink);
+  font-size: 0.62rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0.65rem 0.4rem;
+  padding: 0.4rem 0.28rem;
   text-align: center;
+  border-bottom: 2px solid var(--line);
 }
 
 .schedule-grid .sg-time {
+  position: sticky;
+  left: 0;
+  z-index: 4;
   width: 7.5rem;
-  background: #f8fafb;
-  color: #3a4d68;
+  min-width: 7.5rem;
+  max-width: 7.5rem;
+  background: var(--surface);
+  color: var(--ink-soft);
   font-weight: 600;
-  font-size: 0.75rem;
-  text-align: right;
-  padding: 0.35rem 0.55rem;
+  font-size: 0.55rem;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-align: left;
+  padding: 0.18rem 0.32rem;
   white-space: nowrap;
+  border-right: 2px solid var(--line);
+  box-shadow: 6px 0 10px -8px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="dark"] .schedule-grid .sg-time {
+  background: #152033;
+}
+
+html[data-theme="light"] .schedule-grid .sg-time,
+html:not([data-theme]) .schedule-grid .sg-time {
+  background: #ffffff;
+}
+
+.schedule-grid thead .sg-time {
+  z-index: 6;
+  color: var(--ink);
+  text-align: left;
+  font-size: 0.58rem;
+  background: color-mix(in srgb, var(--surface) 82%, var(--brand, #0b6e6e) 18%);
+}
+
+html[data-theme="dark"] .schedule-grid thead .sg-time {
+  background: #1a2a40;
+}
+
+html[data-theme="light"] .schedule-grid thead .sg-time,
+html:not([data-theme]) .schedule-grid thead .sg-time {
+  background: #eef3f6;
 }
 
 .schedule-grid .sg-empty {
-  background: #fbfcfd;
-  height: 2.1rem;
+  position: relative;
+  z-index: 0;
+  background: transparent;
+  height: 1.35rem;
+  min-height: 1.35rem;
 }
 
 .schedule-grid .sg-block {
-  background: linear-gradient(160deg, rgba(11, 110, 110, 0.16), rgba(11, 110, 110, 0.08));
-  border-left: 3px solid #0b6e6e;
-  color: #10233f;
-  padding: 0.4rem 0.45rem;
-  line-height: 1.3;
+  position: relative;
+  z-index: 0;
+  background: color-mix(in srgb, var(--brand, #0b6e6e) 22%, var(--surface));
+  border-left: 3px solid var(--brand, #0b6e6e);
+  color: var(--ink);
+  padding: 0.28rem 0.35rem;
+  line-height: 1.25;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .schedule-grid .sg-block.is-overlap {
-  background: linear-gradient(160deg, rgba(180, 35, 24, 0.16), rgba(217, 119, 6, 0.12));
-  border-left-color: #b42318;
+  background: color-mix(in srgb, var(--danger, #b42318) 18%, var(--surface));
+  border-left-color: var(--danger, #b42318);
 }
 
 .schedule-grid .sg-block-label {
   display: block;
   font-weight: 700;
+  font-size: 0.62rem;
   white-space: pre-line;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  max-width: 100%;
+}
+
+.schedule-grid .sg-block-label.is-action {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 0.2rem;
+}
+
+.schedule-grid-wrap.is-clickable .sg-block-label.is-action:hover,
+.schedule-grid-wrap.is-clickable .sg-block-label.is-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--danger, #b42318) 55%, transparent);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--danger, #b42318) 12%, transparent);
+}
+
+.schedule-grid-hint {
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--muted, #667);
 }
 
 .schedule-grid .sg-block-label + .sg-block-label {
-  margin-top: 0.45rem;
-  padding-top: 0.45rem;
-  border-top: 1px dashed rgba(180, 35, 24, 0.35);
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
 }
 
 .schedule-grid .sg-overlap-flag {
   display: inline-block;
-  margin-bottom: 0.3rem;
-  padding: 0.1rem 0.4rem;
+  margin-bottom: 0.2rem;
+  padding: 0.08rem 0.35rem;
   border-radius: 999px;
-  background: rgba(180, 35, 24, 0.12);
-  color: #b42318;
-  font-size: 0.68rem;
+  background: color-mix(in srgb, var(--danger, #b42318) 18%, transparent);
+  color: var(--danger, #b42318);
+  font-size: 0.52rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .schedule-grid-meta {
-  margin: 0 0 0.75rem;
-  color: #3a4d68;
-  font-size: 0.9rem;
+  margin: 0 0 0.85rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
 }
 
+/* Compact variant (modals / dense embeds) — no zoom hack */
+.schedule-grid-wrap.is-compact {
+  max-height: min(55vh, 520px);
+}
+
+.schedule-grid.is-compact {
+  font-size: 0.84rem;
+  min-width: 780px;
+}
+
+.schedule-grid.is-compact .sg-empty {
+  height: 2.15rem;
+  min-height: 2.15rem;
+}
+
+.schedule-grid.is-compact .sg-block {
+  padding: 0.45rem 0.5rem;
+}
+
+.schedule-grid.is-compact .sg-block-label {
+  font-size: 0.78rem;
+}
+
+/* Room / faculty pick cards */
 .schedule-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
 }
 
 .schedule-pick-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
+  gap: 0.4rem;
   width: 100%;
   text-align: left;
-  padding: 1rem 1.05rem 0.95rem;
-  border: 1px solid rgba(16, 35, 63, 0.12);
-  border-radius: 14px;
-  background: linear-gradient(165deg, #ffffff 0%, #f7fbfb 100%);
-  color: #10233f;
+  padding: 1.1rem 1.15rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--brand, #0b6e6e) 6%);
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
-  box-shadow: 0 8px 20px rgba(16, 35, 63, 0.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .schedule-pick-card:hover,
 .schedule-pick-card:focus-visible {
   transform: translateY(-2px);
-  border-color: rgba(11, 110, 110, 0.45);
-  box-shadow: 0 14px 28px rgba(16, 35, 63, 0.1);
+  border-color: color-mix(in srgb, var(--brand, #0b6e6e) 55%, var(--line));
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.18);
   outline: none;
+}
+
+.schedule-pick-card--conflict {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  background: color-mix(in srgb, var(--surface) 88%, var(--danger) 12%);
+}
+
+.schedule-pick-card--conflict .schedule-pick-card__title,
+.schedule-pick-card--conflict .schedule-pick-card__cta {
+  color: var(--danger);
+}
+
+.schedule-pick-card--full {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+}
+
+.schedule-pick-card--underload {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
 .schedule-pick-card__eyebrow {
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #3a4d68;
+  color: var(--ink-soft);
 }
 
 .schedule-pick-card__title {
   font-family: "Libre Baskerville", Georgia, serif;
-  font-size: 1.05rem;
+  font-size: 1.08rem;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
+  color: var(--ink);
 }
 
 .schedule-pick-card__stat {
-  font-size: 0.88rem;
-  color: #3a4d68;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
 }
 
 .schedule-pick-card__cta {
-  margin-top: 0.45rem;
-  font-size: 0.82rem;
+  margin-top: 0.5rem;
+  font-size: 0.84rem;
   font-weight: 700;
-  color: #0b6e6e;
+  color: var(--brand, #0b6e6e);
+}
+
+html[data-theme="dark"] .schedule-pick-card__cta {
+  color: #5fd4d0;
 }
 
 .room-grid-section {
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(16, 35, 63, 0.08);
+  margin-bottom: 1.35rem;
+}
+
+.room-grid-section__label {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.room-grid-section__title {
+  margin: 0 0 0.85rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--ink);
 }
 
 .room-grid-section:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+/* Faculty timetable page chrome */
+.faculty-tt-panel .panel-head {
+  align-items: flex-start;
+  gap: 0.85rem 1rem;
+}
+
+.faculty-tt-panel .panel-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.faculty-tt-detail-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.faculty-tt-detail-head h3 {
+  margin: 0;
+  font-size: 1.45rem;
+  color: var(--ink);
 }
 
 /* Match faculty timetable panel width inside View schedule */
@@ -174,4 +351,20 @@
   max-height: calc(100vh - 2rem);
   overflow: auto;
   padding: 1.35rem 1.5rem 1.25rem;
+}
+
+@media (max-width: 720px) {
+  .schedule-grid {
+    min-width: 720px;
+    font-size: 0.84rem;
+  }
+
+  .schedule-grid .sg-empty {
+    height: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  .schedule-card-grid {
+    grid-template-columns: 1fr;
+  }
 }

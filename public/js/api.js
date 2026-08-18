@@ -2,17 +2,35 @@
   "use strict";
 
   /**
-   * Resolve API base relative to /public so this works under
-   * http://localhost/ScheduleGuard/public or a vhost pointed at public/.
+   * Resolve API base from this script's URL so it works under:
+   *   http://127.0.0.1:8765/          (PHP built-in server + router.php)
+   *   http://localhost/schoolguard/   (Apache subdirectory, public/ rewritten)
+   *   http://localhost/schoolguard/public/
    */
   function apiBase() {
+    const script = document.querySelector('script[src*="js/api.js"]');
+    if (script && script.getAttribute("src")) {
+      try {
+        const url = new URL(script.src, window.location.href);
+        let dir = url.pathname.replace(/\\/g, "/").replace(/\/js\/api\.js.*$/i, "");
+        dir = dir.replace(/\/public$/i, "");
+        return (dir || "") + "/api";
+      } catch {
+        // fall through
+      }
+    }
+
     const path = window.location.pathname.replace(/\\/g, "/");
     const publicIdx = path.lastIndexOf("/public/");
     if (publicIdx !== -1) {
       return path.slice(0, publicIdx) + "/api";
     }
-    // Built-in server / vhost with router.php: site root maps to public/, API at /api.
-    return "/api";
+
+    const file = path.split("/").pop() || "";
+    const dir = file.includes(".")
+      ? path.slice(0, path.lastIndexOf("/"))
+      : path.replace(/\/$/, "");
+    return (dir || "") + "/api";
   }
 
   const TOKEN_KEY = "scheduleguard_token";

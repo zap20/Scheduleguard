@@ -1,5 +1,12 @@
 -- ScheduleGuard schema
 -- MySQL 8+ / MariaDB 10.4+
+--
+-- User side (normalized):
+--   user            account identity + auth + role
+--   departmentUser  user ↔ department membership (one department per user)
+--   faculty         Faculty-only profile (employmentType)
+--   student         Student-only profile (yearLevel, studentType, enrollment eval)
+--   userProfile     read-only view joining the four
 
 CREATE DATABASE IF NOT EXISTS scheduleguard
   CHARACTER SET utf8mb4
@@ -9,12 +16,18 @@ USE scheduleguard;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP VIEW IF EXISTS userProfile;
 DROP TABLE IF EXISTS auditLog;
 DROP TABLE IF EXISTS enrollment;
 DROP TABLE IF EXISTS block;
 DROP TABLE IF EXISTS attendanceRecord;
 DROP TABLE IF EXISTS schedule;
+DROP TABLE IF EXISTS classBlockMember;
+DROP TABLE IF EXISTS classBlock;
 DROP TABLE IF EXISTS subject;
+DROP TABLE IF EXISTS student;
+DROP TABLE IF EXISTS faculty;
+DROP TABLE IF EXISTS departmentUser;
 DROP TABLE IF EXISTS `user`;
 DROP TABLE IF EXISTS room;
 DROP TABLE IF EXISTS department;
@@ -41,9 +54,10 @@ CREATE TABLE room (
   KEY idx_room_type (roomType)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Account identity + auth. Role-specific data lives in faculty / student.
+-- Department membership lives in departmentUser (one department per user).
 CREATE TABLE `user` (
   uid VARCHAR(36) NOT NULL,
-  departmentId VARCHAR(36) NULL,
   firstName VARCHAR(100) NOT NULL,
   lastName VARCHAR(100) NOT NULL,
   email VARCHAR(191) NOT NULL,
@@ -60,36 +74,125 @@ CREATE TABLE `user` (
   UNIQUE KEY uq_user_email (email),
   UNIQUE KEY uq_user_api_token (apiToken),
   UNIQUE KEY uq_user_school_role (schoolId, role),
-  KEY idx_user_department (departmentId),
   KEY idx_user_role (role),
-  CONSTRAINT fk_user_department
+  KEY idx_user_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- User ↔ department (currently 1:1; separate from account so department is not a user column).
+CREATE TABLE departmentUser (
+  userId VARCHAR(36) NOT NULL,
+  departmentId VARCHAR(36) NOT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (userId),
+  KEY idx_department_user_department (departmentId),
+  CONSTRAINT fk_department_user_user
+    FOREIGN KEY (userId) REFERENCES `user` (uid)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_department_user_department
     FOREIGN KEY (departmentId) REFERENCES department (uid)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE faculty (
+  userId VARCHAR(36) NOT NULL,
+  employmentType ENUM('Regular', 'PartTime') NOT NULL DEFAULT 'Regular',
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (userId),
+  KEY idx_faculty_employment (employmentType),
+  CONSTRAINT fk_faculty_user
+    FOREIGN KEY (userId) REFERENCES `user` (uid)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE student (
+  userId VARCHAR(36) NOT NULL,
+  yearLevel ENUM('1st Year', '2nd Year', '3rd Year', '4th Year') NOT NULL,
+  studentType ENUM('Regular', 'Irregular') NOT NULL DEFAULT 'Regular',
+  -- Program Head must Approve before student can be assigned to a class block.
+  enrollmentEvalStatus ENUM('Pending', 'Approved', 'Rejected') NOT NULL DEFAULT 'Pending',
+  enrollmentEvalBy VARCHAR(36) NULL,
+  enrollmentEvalAt DATETIME NULL,
+  enrollmentEvalNotes VARCHAR(500) NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (userId),
+  KEY idx_student_year (yearLevel),
+  KEY idx_student_type (studentType),
+  KEY idx_student_eval (enrollmentEvalStatus),
+  KEY idx_student_eval_by (enrollmentEvalBy),
+  CONSTRAINT fk_student_user
+    FOREIGN KEY (userId) REFERENCES `user` (uid)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_student_eval_by
+    FOREIGN KEY (enrollmentEvalBy) REFERENCES `user` (uid)
     ON UPDATE CASCADE
     ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Read model: account + department + role profiles (not updatable).
+CREATE VIEW userProfile AS
+SELECT
+  u.uid,
+  du.departmentId,
+  u.firstName,
+  u.lastName,
+  u.email,
+  u.schoolId,
+  u.role,
+  u.phoneNumber,
+  u.status,
+  f.employmentType,
+  s.yearLevel,
+  s.studentType,
+  s.enrollmentEvalStatus,
+  s.enrollmentEvalBy,
+  s.enrollmentEvalAt,
+  s.enrollmentEvalNotes,
+  u.passwordHash,
+  u.apiToken,
+  u.tokenExpiresAt,
+  u.createdAt
+FROM `user` u
+LEFT JOIN departmentUser du ON du.userId = u.uid
+LEFT JOIN faculty f ON f.userId = u.uid
+LEFT JOIN student s ON s.userId = u.uid;
+
 CREATE TABLE subject (
   uid VARCHAR(36) NOT NULL,
   departmentId VARCHAR(36) NOT NULL,
+  servingDepartmentId VARCHAR(36) NULL,
   code VARCHAR(50) NOT NULL,
   title VARCHAR(200) NOT NULL,
   yearLevel ENUM('1st Year', '2nd Year', '3rd Year', '4th Year') NOT NULL,
   semester ENUM('1st Semester', '2nd Semester', 'Summer') NOT NULL,
   curriculumYear SMALLINT UNSIGNED NOT NULL,
+  subjectType ENUM('MAJOR', 'MINOR') NOT NULL DEFAULT 'MAJOR',
   units DECIMAL(4,1) NOT NULL DEFAULT 3.0,
+  lectureHours DECIMAL(4,2) NOT NULL DEFAULT 0,
+  labHours DECIMAL(4,2) NOT NULL DEFAULT 0,
+  labSessionCount TINYINT UNSIGNED NOT NULL DEFAULT 1,
   preferredRoomType ENUM('LAB', 'LECTURE') NOT NULL DEFAULT 'LECTURE',
   status VARCHAR(30) NOT NULL DEFAULT 'Active',
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (uid),
   UNIQUE KEY uq_subject_dept_code_year (departmentId, code, curriculumYear),
   KEY idx_subject_department (departmentId),
+  KEY idx_subject_serving_department (servingDepartmentId),
+  KEY idx_subject_type (subjectType),
   KEY idx_subject_year_sem (yearLevel, semester),
   KEY idx_subject_curriculum_year (curriculumYear),
   KEY idx_subject_status (status),
   CONSTRAINT fk_subject_department
     FOREIGN KEY (departmentId) REFERENCES department (uid)
     ON UPDATE CASCADE
-    ON DELETE RESTRICT
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_subject_serving_department
+    FOREIGN KEY (servingDepartmentId) REFERENCES department (uid)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE schedule (
@@ -210,10 +313,14 @@ CREATE TABLE attendanceRecord (
   isOffline TINYINT(1) NOT NULL DEFAULT 0,
   timestamp DATETIME NOT NULL,
   syncedAt DATETIME NULL,
+  -- Checker mobile sync idempotency (nullable for web/seed rows).
+  clientLocalId VARCHAR(36) NULL,
+  deviceMeta VARCHAR(500) NULL,
   -- Countable late/absent hours use schedule.startTime/endTime + ATTENDANCE_GRACE_MINUTES
   -- (default 20). Scan within grace → 0 late. Scan after grace → late from class start
   -- (e.g. 07:35 → 35 min). Absent/NoSchedule → full class duration.
   PRIMARY KEY (uid),
+  UNIQUE KEY uq_attendance_client_local_id (clientLocalId),
   KEY idx_attendance_schedule (scheduleId),
   KEY idx_attendance_checker (checkerId),
   CONSTRAINT fk_attendance_schedule

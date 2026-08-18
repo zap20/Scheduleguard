@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TBF schedules — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css?v=parse-card-1" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-9" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            Schedules · TBF (unassigned) · <span id="user-label">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel faculty-tt-panel" style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>TBF timetable</h2>
+            <p class="panel-sub">
+              Meetings with no instructor yet (<strong>TBF</strong>). Browse by
+              <strong>room</strong> and open a weekly grid — same layout as Faculty schedule.
+            </p>
+          </div>
+          <div class="panel-head-actions">
+            <span class="term-chip" id="term-chip">…</span>
+            <div class="count-chip"><span id="result-count">0</span> TBF rows</div>
+          </div>
+        </div>
+
+        <div id="schedule-alert" class="alert alert-error" role="alert"></div>
+
+        <div id="cards-view">
+          <div id="schedule-cards" class="schedule-card-grid"></div>
+          <p id="cards-empty" class="empty-state" hidden>
+            No unassigned (TBF) meetings for this term.
+          </p>
+        </div>
+
+        <div id="detail-view" hidden>
+          <div class="faculty-tt-detail-head">
+            <button type="button" class="btn btn-secondary" id="back-to-cards" style="width: auto; min-width: 0">
+              ← Back to rooms
+            </button>
+            <h3 id="detail-title">Weekly grid</h3>
+            <p id="detail-sub" class="panel-sub" style="margin: 0"></p>
+          </div>
+          <div id="schedule-grid"></div>
+          <p id="schedule-empty" class="empty-state" hidden>No TBF meetings in this room.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="list-panel" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Meeting list</h2>
+            <p class="panel-sub">Unassigned meetings for the selected room.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Instructor</th>
+                <th>Subject code</th>
+                <th>Block</th>
+                <th>Day / Time</th>
+                <th>Room</th>
+              </tr>
+            </thead>
+            <tbody id="schedule-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/schedule-grid.js?v=meet-5"></script>
+    <script src="js/tbf-schedule-dean.js?v=conflict-card-1"></script>
+  </body>
+</html>

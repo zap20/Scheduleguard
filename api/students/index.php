@@ -27,7 +27,7 @@ if ($user['role'] === 'ProgramHead') {
 }
 
 $sql = 'SELECT uid, firstName, lastName, email, schoolId, departmentId, status
-        FROM `user`
+        FROM userProfile
         WHERE role = \'Student\' AND status = \'Active\'';
 $params = [];
 

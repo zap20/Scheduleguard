@@ -43,6 +43,13 @@ try {
             'blockReason' => $reason,
         ]);
     }
+    if (str_starts_with($message, 'NOT_EVALUATED:')) {
+        $reason = substr($message, strlen('NOT_EVALUATED:'));
+        jsonError('Student must be evaluated and Approved before assignment.', 422, [
+            'code' => 'NOT_EVALUATED',
+            'blockReason' => $reason,
+        ]);
+    }
     jsonError($message, 422);
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);

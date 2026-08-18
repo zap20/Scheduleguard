@@ -17,11 +17,10 @@
       { href: "student-blocks.html", label: "Blocking status" },
     ],
     Dean: [
-      { href: "curriculum.html", label: "Curriculum" },
+      { href: "curriculum.html", label: "Subjects" },
       { href: "rooms.html", label: "Rooms" },
       { href: "student-schedule-dean.html", label: "Schedules" },
       { href: "users.html", label: "Users" },
-      { href: "attendance-dean.html", label: "Attendance" },
       { href: "blocking.html", label: "Blocking" },
       { href: "audit.html", label: "Audit" },
     ],
@@ -30,7 +29,7 @@
       { href: "blocking.html", label: "Blocking list" },
     ],
     ProgramHead: [
-      { href: "enrollment.html", label: "Enrollment" },
+      { href: "enrollment.html", label: "Class blocks / Enrollment" },
       { href: "blocking.html", label: "Blocking" },
     ],
   };
@@ -38,12 +37,25 @@
   const BLURBS = {
     Faculty: "Your attendance snapshot and confirmed teaching load.",
     Student: "Clearance status and classes distributed to you.",
-    Dean: "Conflicts, attendance oversight, and admin shortcuts.",
+    Dean: "Attendance oversight and schedule conflict alerts.",
     HR: "Campus-wide faculty attendance at a glance.",
     ProgramHead: "Pending enrollments, blocks, and distribution progress.",
   };
 
   const charts = [];
+  let selectedPeriod = "monthly";
+  let currentRole = null;
+
+  function clearCharts() {
+    while (charts.length) {
+      const chart = charts.pop();
+      try {
+        chart.destroy();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -151,6 +163,60 @@
         ),
       })
     );
+  }
+
+  function periodFilterBar(activePeriod, periodMeta) {
+    const options = [
+      { id: "daily", label: "Daily" },
+      { id: "weekly", label: "Weekly" },
+      { id: "monthly", label: "Monthly" },
+      { id: "semester", label: "Semester" },
+      { id: "year", label: "Year" },
+    ];
+    const range =
+      periodMeta && periodMeta.dateFrom && periodMeta.dateTo
+        ? periodMeta.dateFrom === periodMeta.dateTo
+          ? periodMeta.dateFrom
+          : periodMeta.dateFrom + " → " + periodMeta.dateTo
+        : "";
+
+    return (
+      '<div class="period-filter-bar">' +
+      '<div class="period-filter-tabs" role="tablist" aria-label="Attendance period">' +
+      options
+        .map(function (opt) {
+          const active = opt.id === activePeriod ? " is-active" : "";
+          return (
+            '<button type="button" class="period-filter-tab' +
+            active +
+            '" data-period="' +
+            escapeHtml(opt.id) +
+            '" role="tab" aria-selected="' +
+            (opt.id === activePeriod ? "true" : "false") +
+            '">' +
+            escapeHtml(opt.label) +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>" +
+      '<span class="period-filter-label">' +
+      escapeHtml((periodMeta && periodMeta.label) || "") +
+      (range ? " · " + escapeHtml(range) : "") +
+      "</span>" +
+      "</div>"
+    );
+  }
+
+  function bindPeriodFilters() {
+    root.querySelectorAll("[data-period]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const next = btn.getAttribute("data-period") || "monthly";
+        if (next === selectedPeriod) return;
+        selectedPeriod = next;
+        loadDashboard(selectedPeriod);
+      });
+    });
   }
 
   function renderFaculty(d) {
@@ -264,6 +330,12 @@
       );
   }
 
+  function formatHours(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "0";
+    return n % 1 === 0 ? String(n) : n.toFixed(2);
+  }
+
   function renderDean(d) {
     const conflictBanner =
       d.conflicts.total > 0
@@ -272,11 +344,17 @@
           d.conflicts.total +
           " schedule(s) in conflict</strong> need review before confirmation." +
           listPreview(d.conflicts.items, "", function (row) {
+            const block =
+              row.blockName && String(row.blockName).trim() !== ""
+                ? String(row.blockName).trim()
+                : "No block";
             return (
               "<strong>" +
               escapeHtml(row.subjectName) +
               "</strong> — " +
               escapeHtml(row.facultyName) +
+              " · " +
+              escapeHtml(block) +
               " · " +
               escapeHtml(row.day) +
               " " +
@@ -290,28 +368,167 @@
           '">Resolve in schedule management →</a></div>'
         : '<div class="conflict-banner is-clear">No schedules are currently flagged as conflict.</div>';
 
+    const labels = d.attendanceChart.labels || [];
+    const values = d.attendanceChart.values || [];
+    let statusMetrics = "";
+    for (let i = 0; i < labels.length; i++) {
+      statusMetrics += metric(labels[i], values[i] || 0);
+    }
+
+    const topAbsent = d.topAbsent || [];
+    const topPresent = d.topPresent || [];
+    const termLabel = (d.term && d.term.label) || "Current term";
+    const grace = d.graceMinutes != null ? d.graceMinutes : 20;
+
+    function facultyRankTable(rows, emptyText, columns) {
+      if (!rows.length) {
+        return '<p class="dash-empty">' + escapeHtml(emptyText) + "</p>";
+      }
+      return (
+        '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+        columns
+          .map(function (c) {
+            return "<th>" + escapeHtml(c.label) + "</th>";
+          })
+          .join("") +
+        "</tr></thead><tbody>" +
+        rows
+          .map(function (row) {
+            return (
+              "<tr>" +
+              columns
+                .map(function (c) {
+                  return "<td>" + c.render(row) + "</td>";
+                })
+                .join("") +
+              "</tr>"
+            );
+          })
+          .join("") +
+        "</tbody></table></div>"
+      );
+    }
+
+    const absentTable = facultyRankTable(
+      topAbsent,
+      "No absences recorded for " + termLabel + ".",
+      [
+        {
+          label: "#",
+          render: function (row) {
+            return escapeHtml(row.rank);
+          },
+        },
+        {
+          label: "Faculty",
+          render: function (row) {
+            return (
+              '<div class="cell-strong">' +
+              escapeHtml(row.faculty.fullName) +
+              '</div><div class="cell-muted">' +
+              escapeHtml(row.faculty.email) +
+              "</div>"
+            );
+          },
+        },
+        {
+          label: "Absent hrs",
+          render: function (row) {
+            return "<strong>" + escapeHtml(formatHours(row.absentHours)) + "</strong>";
+          },
+        },
+        {
+          label: "Late hrs",
+          render: function (row) {
+            return escapeHtml(formatHours(row.lateHours));
+          },
+        },
+      ]
+    );
+
+    const presentTable = facultyRankTable(
+      topPresent,
+      "No present records for " + termLabel + ".",
+      [
+        {
+          label: "#",
+          render: function (row) {
+            return escapeHtml(row.rank);
+          },
+        },
+        {
+          label: "Faculty",
+          render: function (row) {
+            return (
+              '<div class="cell-strong">' +
+              escapeHtml(row.faculty.fullName) +
+              '</div><div class="cell-muted">' +
+              escapeHtml(row.faculty.email) +
+              "</div>"
+            );
+          },
+        },
+        {
+          label: "Present hrs",
+          render: function (row) {
+            return "<strong>" + escapeHtml(formatHours(row.presentHours)) + "</strong>";
+          },
+        },
+        {
+          label: "Scans",
+          render: function (row) {
+            return escapeHtml(row.presentCount);
+          },
+        },
+      ]
+    );
+
+    const periodMeta = d.period || { period: selectedPeriod, label: termLabel };
+    const activePeriod = periodMeta.period || selectedPeriod;
+
     root.innerHTML =
       '<div class="dash-span-2">' +
       conflictBanner +
       "</div>" +
       widget(
-        "Schedule workspace",
-        shortcutButtons(d.shortcuts) +
-          '<div class="dash-metrics-row">' +
-          metric("Draft", d.scheduleBreakdown.draft) +
-          metric("Conflict", d.scheduleBreakdown.conflict) +
-          metric("Confirmed", d.scheduleBreakdown.confirmed) +
-          "</div>",
-        "student-schedule-dean.html",
-        "Open student schedule"
-      ) +
-      widget(
         "Attendance oversight",
-        metric("Total scans", d.attendanceChart.total) +
-          '<div class="chart-wrap"><canvas id="chart-attendance"></canvas></div>',
-        "attendance-dean.html",
-        "Open attendance oversight"
+        periodFilterBar(activePeriod, periodMeta) +
+          '<p class="dash-empty" style="margin-top:0.65rem">' +
+          escapeHtml(String(grace)) +
+          "-min grace · statuses: Present, Late, Absent" +
+          "</p>" +
+          '<div class="dash-metrics-row dash-metrics-row--4">' +
+          metric("Total scans", d.attendanceChart.total) +
+          statusMetrics +
+          "</div>" +
+          '<div class="chart-wrap tall" style="margin-top:0.75rem"><canvas id="chart-attendance"></canvas></div>' +
+          '<div class="analytics-grid" style="margin-top:1rem">' +
+          '<div class="dash-rank-panel">' +
+          '<h4 class="dash-section-title">Top absences</h4>' +
+          '<div class="chart-wrap"><canvas id="chart-top-absent"></canvas></div>' +
+          absentTable +
+          "</div>" +
+          '<div class="dash-rank-panel">' +
+          '<h4 class="dash-section-title">Top present</h4>' +
+          '<div class="chart-wrap"><canvas id="chart-top-present"></canvas></div>' +
+          presentTable +
+          "</div>" +
+          "</div>",
+        null,
+        null,
+        "dash-span-2"
       );
+
+    bindPeriodFilters();
+
+    const tickColor =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--ink-soft")
+        .trim() || "#3a4d68";
+    const gridColor =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--line")
+        .trim() || "rgba(16,35,63,0.12)";
 
     makeChart("chart-attendance", {
       type: "bar",
@@ -321,13 +538,92 @@
           {
             label: "Attendance",
             data: d.attendanceChart.values,
-            backgroundColor: ["#067647", "#d97706", "#b42318", "#64748b"],
+            backgroundColor: ["#067647", "#d97706", "#0b6e6e"],
           },
         ],
       },
       options: {
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        scales: {
+          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0, color: tickColor },
+            grid: { color: gridColor },
+          },
+        },
+      },
+    });
+
+    makeChart("chart-top-absent", {
+      type: "bar",
+      data: {
+        labels: topAbsent.length
+          ? topAbsent.map(function (r) {
+              return r.faculty.fullName;
+            })
+          : ["No data"],
+        datasets: [
+          {
+            label: "Absent hours",
+            data: topAbsent.length
+              ? topAbsent.map(function (r) {
+                  return Number(r.absentHours) || 0;
+                })
+              : [0],
+            backgroundColor: "rgba(180, 35, 24, 0.55)",
+            borderRadius: 8,
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { color: tickColor },
+            grid: { color: gridColor },
+            title: { display: true, text: "Absent hours", color: tickColor },
+          },
+          y: { ticks: { color: tickColor }, grid: { color: gridColor } },
+        },
+      },
+    });
+
+    makeChart("chart-top-present", {
+      type: "bar",
+      data: {
+        labels: topPresent.length
+          ? topPresent.map(function (r) {
+              return r.faculty.fullName;
+            })
+          : ["No data"],
+        datasets: [
+          {
+            label: "Present hours",
+            data: topPresent.length
+              ? topPresent.map(function (r) {
+                  return Number(r.presentHours) || 0;
+                })
+              : [0],
+            backgroundColor: "rgba(6, 118, 71, 0.55)",
+            borderRadius: 8,
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { color: tickColor },
+            grid: { color: gridColor },
+            title: { display: true, text: "Present hours", color: tickColor },
+          },
+          y: { ticks: { color: tickColor }, grid: { color: gridColor } },
+        },
       },
     });
   }
@@ -368,6 +664,13 @@
           "</p>",
         d.pendingEnrollments.href,
         "Open enrollment workspace"
+      ) +
+      widget(
+        "Class blocks",
+        metric("Blocks this term", (d.classBlocks && d.classBlocks.count) || 0) +
+          '<p class="dash-empty">Created by the Dean — assign students on Enrollment.</p>',
+        (d.classBlocks && d.classBlocks.href) || "enrollment.html",
+        "View class blocks"
       ) +
       widget(
         "Distribution status",
@@ -424,6 +727,8 @@
   }
 
   function renderDashboard(role, dashboard) {
+    clearCharts();
+    currentRole = role;
     document.getElementById("dash-title").textContent = role + " dashboard";
     document.getElementById("dash-blurb").textContent =
       BLURBS[role] || "Your ScheduleGuard workspace.";
@@ -444,6 +749,37 @@
     }
   }
 
+  async function loadDashboard(period) {
+    const qs =
+      currentRole === "Dean" || !currentRole
+        ? "?period=" + encodeURIComponent(period || selectedPeriod || "monthly")
+        : "";
+    const result = await Api.api("/dashboard/summary.php" + qs);
+    if (!result || !result.data || !result.data.user) {
+      throw new Error(
+        (result && result.error) ||
+          "Dashboard response was incomplete. Try signing in again, or run php database/install.php."
+      );
+    }
+    const user = result.data.user;
+    Api.setSession(
+      Object.assign({}, Api.getStoredUser() || {}, user),
+      Api.getToken()
+    );
+
+    document.getElementById("user-name").textContent =
+      user.firstName + " " + user.lastName;
+    document.getElementById("user-role").textContent = user.role;
+    document.getElementById("user-email").textContent = user.email;
+    renderNav(user.role);
+
+    if (user.role === "Dean" && result.data.dashboard && result.data.dashboard.period) {
+      selectedPeriod = result.data.dashboard.period.period || selectedPeriod;
+    }
+
+    renderDashboard(user.role, result.data.dashboard);
+  }
+
   async function boot() {
     if (!Api.getToken()) {
       window.location.href = "index.html";
@@ -451,25 +787,7 @@
     }
 
     try {
-      const result = await Api.api("/dashboard/summary.php");
-      if (!result || !result.data || !result.data.user) {
-        throw new Error(
-          (result && result.error) ||
-            "Dashboard response was incomplete. Try signing in again, or run php database/install.php."
-        );
-      }
-      const user = result.data.user;
-      Api.setSession(
-        Object.assign({}, Api.getStoredUser() || {}, user),
-        Api.getToken()
-      );
-
-      document.getElementById("user-name").textContent =
-        user.firstName + " " + user.lastName;
-      document.getElementById("user-role").textContent = user.role;
-      document.getElementById("user-email").textContent = user.email;
-      renderNav(user.role);
-      renderDashboard(user.role, result.data.dashboard);
+      await loadDashboard(selectedPeriod);
     } catch (err) {
       if (err.status === 401 || err.status === 403) {
         Api.clearSession();

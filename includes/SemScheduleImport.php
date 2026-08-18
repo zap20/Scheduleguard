@@ -7,11 +7,22 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/Term.php';
 require_once __DIR__ . '/Room.php';
 
+function assertZipArchiveAvailable(): void
+{
+    if (class_exists(ZipArchive::class, false)) {
+        return;
+    }
+    throw new InvalidArgumentException(
+        'PHP zip extension is not enabled. In C:\\xampp\\php\\php.ini uncomment extension=zip, then restart Apache.'
+    );
+}
+
 /**
  * Detect 1st-Sem style weekly grid workbooks (TEACHER / course sheets).
  */
 function isSemGridWorkbook(string $path): bool
 {
+    assertZipArchiveAvailable();
     $zip = new ZipArchive();
     if ($zip->open($path) !== true) {
         return false;
@@ -88,6 +99,7 @@ function parseSemGridScheduleXlsx(string $path): array
  */
 function loadXlsxWorkbook(string $path): array
 {
+    assertZipArchiveAvailable();
     $zip = new ZipArchive();
     if ($zip->open($path) !== true) {
         throw new InvalidArgumentException('Unable to open XLSX file.');
@@ -428,10 +440,12 @@ function inferSemTeacherFromPanelMeta(array $grid, array $panel): string
  */
 function extractSemPanelBlocks(array $grid, array $panel): array
 {
-    $maxRow = $panel['dayRow'];
-    foreach ($grid as $r => $_) {
-        if ($r > $maxRow) {
-            $maxRow = $r;
+    $maxRow = isset($panel['endRow']) ? (int) $panel['endRow'] : $panel['dayRow'];
+    if (!isset($panel['endRow'])) {
+        foreach ($grid as $r => $_) {
+            if ($r > $maxRow) {
+                $maxRow = $r;
+            }
         }
     }
 
@@ -445,7 +459,7 @@ function extractSemPanelBlocks(array $grid, array $panel): array
             $row = $grid[$r] ?? [];
             $startRaw = trim((string) ($row[$panel['timeStartCol']] ?? ''));
             $endRaw = trim((string) ($row[$panel['timeEndCol']] ?? ''));
-            if ($startRaw === '' || $endRaw === '') {
+            if ($startRaw === '' || $endRaw === '' || !isSemTimeValue($startRaw) || !isSemTimeValue($endRaw)) {
                 // No time markers — end of this panel's vertical range.
                 if ($active !== null) {
                     $blocks[] = $active;
@@ -501,6 +515,12 @@ function extractSemPanelBlocks(array $grid, array $panel): array
                 continue;
             }
 
+            if ($subject === '' && $meta === '' && !empty($panel['extendEmpty']) && empty($active['extendedEmpty'])) {
+                $active['endMinutes'] = $endMin;
+                $active['extendedEmpty'] = true;
+                continue;
+            }
+
             // Empty continuation — class ended on previous row.
             $blocks[] = $active;
             $active = null;
@@ -534,6 +554,22 @@ function excelTimeToMinutes(string $raw): int
     return 0;
 }
 
+function isSemTimeValue(string $raw): bool
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return false;
+    }
+    if (preg_match('/^\d{1,2}:\d{2}(?::\d{2})?$/', $raw) === 1) {
+        return true;
+    }
+    if (!is_numeric($raw)) {
+        return false;
+    }
+    $n = (float) $raw;
+    return $n >= 0 && $n < 1.5;
+}
+
 function minutesToHm(int $minutes): string
 {
     $minutes = max(0, $minutes);
@@ -553,6 +589,271 @@ function normalizeSemRoomLabel(string $label): string
         return 'CL ' . str_pad($m[1], 2, '0', STR_PAD_LEFT);
     }
     return $label;
+}
+
+function isSemStudentBlockSheetName(string $name): bool
+{
+    $n = strtoupper(trim($name));
+    if ($n === '' || $n === 'TEACHER' || $n === 'ROOM') {
+        return false;
+    }
+    if (str_contains($n, 'TEACHER')) {
+        return false;
+    }
+    return true;
+}
+
+function isSemIrregularBlockLabel(string $course, string $block): bool
+{
+    $blob = strtoupper(trim($course . ' ' . $block));
+    if ($blob === '') {
+        return true;
+    }
+    if (str_contains($blob, 'IRREG')) {
+        return true;
+    }
+    if (preg_match('/^\d{5,}$/', trim($course)) === 1) {
+        return true;
+    }
+    if (preg_match('/^(1ST|2ND|3RD|4TH)\s+YEAR$/i', trim($course)) === 1) {
+        return true;
+    }
+    return false;
+}
+
+function parseSemCourseYearLevel(string $course): ?string
+{
+    if (preg_match('/(\d)\s*$/', trim($course), $m) !== 1) {
+        return null;
+    }
+    return match ((int) $m[1]) {
+        1 => '1st Year',
+        2 => '2nd Year',
+        3 => '3rd Year',
+        4 => '4th Year',
+        default => null,
+    };
+}
+
+function parseSemBlockNumber(string $raw): int
+{
+    $raw = strtoupper(trim($raw));
+    if (preg_match('/^(\d+)$/', $raw, $m) === 1) {
+        return max(1, (int) $m[1]);
+    }
+    if (preg_match('/(\d+)([A-Z])$/', $raw, $m) === 1) {
+        return max(1, ((int) $m[1] * 100) + (ord($m[2]) - 64));
+    }
+    if (preg_match('/(\d+)/', $raw, $m) === 1) {
+        return max(1, (int) $m[1]);
+    }
+    return 1;
+}
+
+function isSemStudentBlockWorkbook(string $path): bool
+{
+    assertZipArchiveAvailable();
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true) {
+        return false;
+    }
+    $wbXml = $zip->getFromName('xl/workbook.xml');
+    $zip->close();
+    if ($wbXml === false) {
+        return false;
+    }
+
+    return stripos($wbXml, 'name="BSIT"') !== false
+        || stripos($wbXml, 'name="HM"') !== false
+        || stripos($wbXml, 'name="BSSW"') !== false
+        || stripos($wbXml, 'name="BPA"') !== false
+        || stripos($wbXml, 'name="AIS"') !== false
+        || stripos($wbXml, 'name="BTLID"') !== false;
+}
+
+/**
+ * Parse Course-and-Year / Block student grids (BSIT, HM, …). Skips IRREG bands.
+ *
+ * @return list<array{
+ *   course:string,
+ *   yearLevel:string,
+ *   blockNumber:int,
+ *   blockLabel:string,
+ *   blockName:string,
+ *   sheet:string,
+ *   meetings:list<array<string,string>>
+ * }>
+ */
+function parseSemStudentBlockXlsx(string $path, ?string $onlySheet = null): array
+{
+    $book = loadXlsxWorkbook($path);
+    $term = currentTermWindow();
+    $groups = [];
+    $only = $onlySheet !== null ? strtoupper(trim($onlySheet)) : '';
+    if ($only === 'ALL') {
+        $only = '';
+    }
+
+    foreach ($book['sheets'] as $sheetName => $sheetPath) {
+        if (!isSemStudentBlockSheetName((string) $sheetName)) {
+            continue;
+        }
+        if ($only !== '' && strtoupper((string) $sheetName) !== $only) {
+            continue;
+        }
+        $grid = loadXlsxSheetGrid($book['zipPath'], $sheetPath, $book['sharedStrings']);
+        foreach (findSemStudentBlockPanels($grid) as $panel) {
+            $blocks = extractSemPanelBlocks($grid, $panel);
+            if ($blocks === []) {
+                continue;
+            }
+            $key = $panel['yearLevel'] . '|' . $panel['blockNumber'] . '|' . strtoupper($panel['course']);
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'course' => $panel['course'],
+                    'yearLevel' => $panel['yearLevel'],
+                    'blockNumber' => $panel['blockNumber'],
+                    'blockLabel' => $panel['blockLabel'],
+                    'blockName' => $panel['blockName'],
+                    'sheet' => (string) $sheetName,
+                    'meetings' => [],
+                ];
+            }
+            foreach ($blocks as $block) {
+                $groups[$key]['meetings'][] = [
+                    'facultyName' => '',
+                    'roomLabel' => $block['room'],
+                    'subjectCode' => extractSemSubjectCode($block['subject']),
+                    'subjectName' => $block['subject'],
+                    'day' => $block['day'],
+                    'startTime' => minutesToHm($block['startMinutes']),
+                    'endTime' => minutesToHm($block['endMinutes']),
+                    'academicYear' => (string) $term['academicYear'],
+                    'semester' => $term['semester'],
+                    'yearLevel' => $panel['yearLevel'],
+                    'blockNumber' => (string) $panel['blockNumber'],
+                    'blockName' => $panel['blockName'],
+                    '_sheet' => (string) $sheetName,
+                    '_source' => $panel['blockName'] . ' / ' . $block['day'],
+                ];
+            }
+        }
+    }
+
+    if ($groups === []) {
+        throw new InvalidArgumentException(
+            'No regular student blocks found. Use a Course and Year / Block sheet (for example BSIT) and skip IRREG.'
+        );
+    }
+
+    return array_values($groups);
+}
+
+/**
+ * @param array<int,array<int,string>> $grid
+ * @return list<array<string,mixed>>
+ */
+function findSemStudentBlockPanels(array $grid): array
+{
+    $dayNames = [
+        'mon' => 'Monday',
+        'tue' => 'Tuesday',
+        'wed' => 'Wednesday',
+        'thu' => 'Thursday',
+        'fri' => 'Friday',
+        'sat' => 'Saturday',
+        'sun' => 'Sunday',
+    ];
+    $headerRows = [];
+    foreach ($grid as $rowNum => $cells) {
+        foreach ($cells as $col => $raw) {
+            if (strcasecmp(trim((string) $raw), 'Course and Year') === 0) {
+                $headerRows[$rowNum] = true;
+            }
+        }
+    }
+    $headerList = array_keys($headerRows);
+    sort($headerList);
+
+    $panels = [];
+    foreach ($headerList as $hi => $headerRow) {
+        $cells = $grid[$headerRow] ?? [];
+        $courseCols = [];
+        foreach ($cells as $col => $raw) {
+            if (strcasecmp(trim((string) $raw), 'Course and Year') === 0) {
+                $courseCols[] = (int) $col;
+            }
+        }
+        sort($courseCols);
+
+        $nextHeader = $headerList[$hi + 1] ?? null;
+        $endRow = $nextHeader !== null ? $nextHeader - 1 : $headerRow + 29;
+
+        foreach ($courseCols as $idx => $courseCol) {
+            $widthEnd = $courseCols[$idx + 1] ?? ($courseCol + 18);
+            $course = '';
+            $blockLabel = '';
+            $seenBlock = false;
+            for ($c = $courseCol + 1; $c < $widthEnd; $c++) {
+                $cell = trim((string) ($cells[$c] ?? ''));
+                if (strcasecmp($cell, 'Block') === 0) {
+                    $seenBlock = true;
+                    continue;
+                }
+                if ($seenBlock && $blockLabel === '' && $cell !== '') {
+                    $blockLabel = $cell;
+                    continue;
+                }
+                if ($course === '' && $cell !== '' && strcasecmp($cell, 'Block') !== 0) {
+                    $course = $cell;
+                }
+            }
+            if (isSemIrregularBlockLabel($course, $blockLabel)) {
+                continue;
+            }
+            $yearLevel = parseSemCourseYearLevel($course);
+            if ($yearLevel === null) {
+                continue;
+            }
+
+            $dayRow = $headerRow + 1;
+            $dayCells = $grid[$dayRow] ?? [];
+            $days = [];
+            for ($offset = 3; $offset <= 15; $offset += 2) {
+                $subjCol = $courseCol + $offset;
+                $label = strtolower(trim((string) ($dayCells[$subjCol] ?? '')));
+                $label = rtrim($label, '.');
+                if (!isset($dayNames[$label])) {
+                    continue;
+                }
+                $days[$dayNames[$label]] = [
+                    'subj' => $subjCol,
+                    'meta' => $subjCol + 1,
+                ];
+            }
+            if (count($days) < 5) {
+                continue;
+            }
+
+            $blockNumber = parseSemBlockNumber($blockLabel !== '' ? $blockLabel : '1');
+            $panels[] = [
+                'teacher' => 'TBF',
+                'course' => $course,
+                'yearLevel' => $yearLevel,
+                'blockLabel' => $blockLabel !== '' ? $blockLabel : (string) $blockNumber,
+                'blockNumber' => $blockNumber,
+                'blockName' => $course . ' Block ' . ($blockLabel !== '' ? $blockLabel : (string) $blockNumber),
+                'dayRow' => $dayRow,
+                'endRow' => $endRow,
+                'timeStartCol' => $courseCol,
+                'timeEndCol' => $courseCol + 2,
+                'extendEmpty' => true,
+                'days' => $days,
+            ];
+        }
+    }
+
+    return $panels;
 }
 
 function extractSemSubjectCode(string $subjectName): string
@@ -598,7 +899,7 @@ function resolveSemImportRow(array $row): array
 
     $facultyId = findOrCreateFacultyByName($facultyName);
     $roomId = findOrCreateRoomByLabel($roomLabel);
-    $departmentId = findUserDepartmentId($facultyId) ?? 'dept-comp';
+    $departmentId = findUserDepartmentId($facultyId) ?? 'dept-cict';
 
     return [
         'facultyId' => $facultyId,
@@ -616,10 +917,7 @@ function resolveSemImportRow(array $row): array
 
 function findUserDepartmentId(string $userId): ?string
 {
-    $stmt = db()->prepare('SELECT departmentId FROM `user` WHERE uid = :uid LIMIT 1');
-    $stmt->execute([':uid' => $userId]);
-    $val = $stmt->fetchColumn();
-    return $val !== false && $val !== null && $val !== '' ? (string) $val : null;
+    return userDepartmentId($userId);
 }
 
 function findOrCreateFacultyByName(string $name): string
@@ -665,22 +963,27 @@ function findOrCreateFacultyByName(string $name): string
         $uid = generateUid();
     }
 
-    $dept = departmentExists('dept-comp') ? 'dept-comp' : null;
+    $dept = departmentExists('dept-cict') ? 'dept-cict' : null;
     $ins = db()->prepare(
         'INSERT INTO `user`
-            (uid, departmentId, firstName, lastName, email, schoolId, role, phoneNumber, status, passwordHash, createdAt)
+            (uid, firstName, lastName, email, schoolId, role, phoneNumber, status, passwordHash, createdAt)
          VALUES
-            (:uid, :departmentId, :firstName, :lastName, :email, :schoolId, \'Faculty\', NULL, \'Active\', :passwordHash, NOW())'
+            (:uid, :firstName, :lastName, :email, :schoolId, \'Faculty\', NULL, \'Active\', :passwordHash, NOW())'
     );
     $ins->execute([
         ':uid' => $uid,
-        ':departmentId' => $dept,
         ':firstName' => 'Teacher',
         ':lastName' => $name,
         ':email' => $email,
         ':schoolId' => $schoolId,
         ':passwordHash' => password_hash('Password123!', PASSWORD_BCRYPT),
     ]);
+    setUserDepartment($uid, $dept);
+    $fac = db()->prepare(
+        'INSERT INTO faculty (userId, employmentType, createdAt)
+         VALUES (:uid, \'Regular\', NOW())'
+    );
+    $fac->execute([':uid' => $uid]);
 
     return $uid;
 }
@@ -777,4 +1080,297 @@ function nextAvailableSchoolIdForRole(string $role): string
         }
     }
     throw new RuntimeException('Unable to allocate schoolId for new faculty.');
+}
+
+function isPlaceholderRoomLabel(string $label): bool
+{
+    $u = strtoupper(trim($label));
+    return $u === '' || $u === 'TBA' || $u === 'TBF' || $u === 'NONE';
+}
+
+function importSubjectRoomType(string $subjectName, string $roomLabel): string
+{
+    $subj = strtoupper($subjectName);
+    if (preg_match('/\bLAB\b/', $subj) === 1) {
+        return ROOM_TYPE_LAB;
+    }
+    if (preg_match('/\bLEC\b/', $subj) === 1) {
+        return ROOM_TYPE_LECTURE;
+    }
+    return inferRoomTypeFromLabel($roomLabel);
+}
+
+/**
+ * @param list<array{roomId:string,day:string,startTime:string,endTime:string,blockKey?:string}> $claimed
+ */
+function importRoomSlotIsFree(
+    string $roomId,
+    string $day,
+    string $startTime,
+    string $endTime,
+    int $academicYear,
+    string $semester,
+    array $claimed
+): bool {
+    foreach ($claimed as $slot) {
+        if (($slot['roomId'] ?? '') !== $roomId) {
+            continue;
+        }
+        if (strcasecmp((string) ($slot['day'] ?? ''), $day) !== 0) {
+            continue;
+        }
+        if (scheduleTimesOverlap(
+            $startTime,
+            $endTime,
+            (string) $slot['startTime'],
+            (string) $slot['endTime']
+        )) {
+            return false;
+        }
+    }
+
+    return isRoomAvailableAt(
+        $roomId,
+        $day,
+        $startTime,
+        $endTime,
+        $academicYear,
+        $semester
+    );
+}
+
+/**
+ * Keep the Excel day/time. Use the listed room when free; otherwise another
+ * free room of the same type at that slot.
+ *
+ * @param list<array{roomId:string,day:string,startTime:string,endTime:string,blockKey?:string}> $claimed
+ * @return array{roomId:string,roomLabel:string,reassigned:bool}|null
+ */
+function findOpenRoomForImportSlot(
+    string $preferredRoomId,
+    string $preferredLabel,
+    string $roomType,
+    string $day,
+    string $startTime,
+    string $endTime,
+    int $academicYear,
+    string $semester,
+    array $claimed
+): ?array {
+    $rooms = fetchRooms();
+    $byId = [];
+    foreach ($rooms as $room) {
+        $byId[(string) $room['uid']] = $room;
+    }
+
+    $try = static function (string $roomId, string $label) use (
+        $day,
+        $startTime,
+        $endTime,
+        $academicYear,
+        $semester,
+        $claimed,
+        $preferredRoomId
+    ): ?array {
+        if ($roomId === '' || isPlaceholderRoomLabel($label)) {
+            return null;
+        }
+        if (!importRoomSlotIsFree(
+            $roomId,
+            $day,
+            $startTime,
+            $endTime,
+            $academicYear,
+            $semester,
+            $claimed
+        )) {
+            return null;
+        }
+        return [
+            'roomId' => $roomId,
+            'roomLabel' => $label,
+            'reassigned' => $roomId !== $preferredRoomId,
+        ];
+    };
+
+    if (!isPlaceholderRoomLabel($preferredLabel)) {
+        $hit = $try($preferredRoomId, $preferredLabel);
+        if ($hit !== null) {
+            $hit['reassigned'] = false;
+            return $hit;
+        }
+    }
+
+    $ranked = [];
+    foreach ($rooms as $room) {
+        $label = (string) $room['label'];
+        if (isPlaceholderRoomLabel($label)) {
+            continue;
+        }
+        $sameType = strtoupper((string) $room['roomType']) === strtoupper($roomType);
+        $ranked[] = [
+            'room' => $room,
+            'rank' => $sameType ? 0 : 1,
+        ];
+    }
+    usort($ranked, static function (array $a, array $b): int {
+        if ($a['rank'] !== $b['rank']) {
+            return $a['rank'] <=> $b['rank'];
+        }
+        return strcmp((string) $a['room']['label'], (string) $b['room']['label']);
+    });
+
+    foreach ($ranked as $item) {
+        $room = $item['room'];
+        $hit = $try((string) $room['uid'], (string) $room['label']);
+        if ($hit !== null) {
+            return $hit;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Resolve rooms and skip overlapping student-block times before insert.
+ *
+ * @param list<array<string,mixed>> $groups
+ * @return array{
+ *   accepted:list<array<string,mixed>>,
+ *   failed:list<array<string,mixed>>,
+ *   skippedIrreg:int,
+ *   reassigned:int
+ * }
+ */
+function planStudentBlockImport(array $groups, string $departmentId): array
+{
+    $accepted = [];
+    $failed = [];
+    $claimed = [];
+    $skippedIrreg = 0;
+    $reassigned = 0;
+
+    foreach ($groups as $group) {
+        $meetings = $group['meetings'] ?? [];
+        $blockKey = strtoupper((string) ($group['yearLevel'] ?? '') . '|' . (string) ($group['blockNumber'] ?? '') . '|' . (string) ($group['course'] ?? ''));
+        $seq = 0;
+        foreach ($meetings as $meeting) {
+            $seq++;
+            $subjectName = (string) ($meeting['subjectName'] ?? '');
+            $source = (string) ($meeting['_source'] ?? ($group['blockName'] ?? 'row'));
+            if (stripos($subjectName, 'IRREG') !== false) {
+                $skippedIrreg++;
+                continue;
+            }
+
+            $day = (string) ($meeting['day'] ?? '');
+            $startTime = (string) ($meeting['startTime'] ?? '');
+            $endTime = (string) ($meeting['endTime'] ?? '');
+            $roomLabel = trim((string) ($meeting['roomLabel'] ?? ''));
+            $failBase = [
+                'row' => $seq,
+                'source' => $source,
+                'data' => [
+                    'blockName' => $group['blockName'] ?? '',
+                    'subject' => $subjectName,
+                    'day' => $day,
+                    'startTime' => $startTime,
+                    'endTime' => $endTime,
+                    'roomLabel' => $roomLabel,
+                ],
+            ];
+
+            $blockClash = false;
+            foreach ($claimed as $slot) {
+                if (($slot['blockKey'] ?? '') !== $blockKey) {
+                    continue;
+                }
+                if (strcasecmp((string) $slot['day'], $day) !== 0) {
+                    continue;
+                }
+                if (scheduleTimesOverlap($startTime, $endTime, (string) $slot['startTime'], (string) $slot['endTime'])) {
+                    $blockClash = true;
+                    break;
+                }
+            }
+            if ($blockClash) {
+                $failed[] = $failBase + [
+                    'error' => sprintf(
+                        'This block already has a class on %s %s–%s. Skipped overlapping meeting.',
+                        $day,
+                        $startTime,
+                        $endTime
+                    ),
+                ];
+                continue;
+            }
+
+            $preferredLabel = $roomLabel !== '' ? $roomLabel : 'TBA';
+            $preferredRoomId = findOrCreateRoomByLabel($preferredLabel);
+            $preferredRoom = fetchRoomById($preferredRoomId);
+            $roomType = importSubjectRoomType($subjectName, $preferredLabel);
+            if ($preferredRoom !== null) {
+                $prefType = strtoupper((string) $preferredRoom['roomType']);
+                if (in_array($prefType, ROOM_TYPES, true) && !isPlaceholderRoomLabel($preferredLabel)) {
+                    $roomType = $prefType;
+                }
+            }
+
+            $academicYear = (int) ($meeting['academicYear'] ?? 0);
+            $semester = (string) ($meeting['semester'] ?? '');
+            $open = findOpenRoomForImportSlot(
+                $preferredRoomId,
+                $preferredLabel,
+                $roomType,
+                $day,
+                $startTime,
+                $endTime,
+                $academicYear,
+                $semester,
+                $claimed
+            );
+            if ($open === null) {
+                $failed[] = $failBase + [
+                    'error' => sprintf(
+                        'No free %s room on %s %s–%s (requested %s).',
+                        $roomType,
+                        $day,
+                        $startTime,
+                        $endTime,
+                        $preferredLabel
+                    ),
+                ];
+                continue;
+            }
+
+            if ($open['reassigned']) {
+                $reassigned++;
+            }
+
+            $claimed[] = [
+                'roomId' => $open['roomId'],
+                'day' => $day,
+                'startTime' => $startTime,
+                'endTime' => $endTime,
+                'blockKey' => $blockKey,
+            ];
+            $accepted[] = [
+                'group' => $group,
+                'meeting' => $meeting,
+                'seq' => $seq,
+                'roomId' => $open['roomId'],
+                'roomLabel' => $open['roomLabel'],
+                'requestedRoom' => $preferredLabel,
+                'reassigned' => $open['reassigned'],
+                'departmentId' => $departmentId,
+            ];
+        }
+    }
+
+    return [
+        'accepted' => $accepted,
+        'failed' => $failed,
+        'skippedIrreg' => $skippedIrreg,
+        'reassigned' => $reassigned,
+    ];
 }

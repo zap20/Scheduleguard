@@ -18,7 +18,7 @@ if ($email === '' || $password === '') {
 
 $stmt = db()->prepare(
     'SELECT uid, departmentId, firstName, lastName, email, role, phoneNumber, status, passwordHash
-     FROM `user`
+     FROM userProfile
      WHERE email = :email
      LIMIT 1'
 );

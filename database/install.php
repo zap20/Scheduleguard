@@ -46,7 +46,7 @@ try {
     runSqlFile($server, __DIR__ . '/seed.sql');
 
     echo "Done. Database '{$name}' is ready.\n";
-    echo "Test login: faculty@scheduleguard.test / Password123!\n";
+    echo "Test login: cict.dean@scheduleguard.test / Password123!\n";
     exit(0);
 } catch (Throwable $e) {
     fwrite(STDERR, "Install failed: " . $e->getMessage() . "\n");

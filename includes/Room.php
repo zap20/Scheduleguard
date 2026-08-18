@@ -205,3 +205,36 @@ function inferRoomTypeFromLabel(string $label): string
     }
     return ROOM_TYPE_LECTURE;
 }
+
+/**
+ * Excel-style room text: "CL 01", "MST 301", "GYM".
+ */
+function formatRoomDisplayLabel(?string $building, ?string $name, ?string $fallback = null): string
+{
+    $building = trim((string) $building);
+    $name = trim((string) $name);
+    $fallback = trim((string) $fallback);
+
+    if (preg_match('/^(CL|MST|JST)$/i', $building) === 1 && $name !== '') {
+        return strtoupper($building) . ' ' . $name;
+    }
+    if (strcasecmp($name, 'GYM') === 0 || strcasecmp($building, 'GYM') === 0) {
+        return 'GYM';
+    }
+    if ($building !== '' && $name !== '') {
+        if (strcasecmp($building, $name) === 0) {
+            return $name;
+        }
+        return $building . ' / ' . $name;
+    }
+    if ($name !== '') {
+        return $name;
+    }
+    if ($building !== '') {
+        return $building;
+    }
+    if ($fallback !== '' && $fallback !== '/') {
+        return $fallback;
+    }
+    return '';
+}

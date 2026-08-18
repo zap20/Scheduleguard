@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student evaluation — ScheduleGuard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/app.css?v=parse-card-1" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-8" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>ScheduleGuard</h1>
+          <div class="meta">
+            Evaluation · <span id="user-label">…</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Student evaluation</h2>
+            <p class="panel-sub">
+              For the current semester, approve cleared students by year level and
+              Regular / Irregular status before class-block assignment.
+            </p>
+          </div>
+          <div class="panel-head-actions">
+            <span class="term-chip" id="term-chip">…</span>
+            <div class="count-chip"><span id="list-count">0</span> students</div>
+          </div>
+        </div>
+
+        <div class="module-tabs" role="tablist" aria-label="Evaluation status" style="margin-bottom: 1rem">
+          <button type="button" class="module-tab is-active" data-eval-tab="pending" role="tab">
+            Non-evaluated
+          </button>
+          <button type="button" class="module-tab" data-eval-tab="evaluated" role="tab">
+            Approved
+          </button>
+        </div>
+
+        <form id="filter-form" class="filter-bar" style="margin-bottom: 1rem">
+          <label>
+            Year level
+            <select id="filter-yearLevel">
+              <option value="">All year levels</option>
+              <option value="1st Year">1st Year</option>
+              <option value="2nd Year">2nd Year</option>
+              <option value="3rd Year">3rd Year</option>
+              <option value="4th Year">4th Year</option>
+            </select>
+          </label>
+          <label>
+            Status (per semester)
+            <select id="filter-studentType">
+              <option value="">Regular &amp; Irregular</option>
+              <option value="Regular">Regular</option>
+              <option value="Irregular">Irregular</option>
+            </select>
+          </label>
+          <button class="btn" type="submit" style="width: auto; min-width: 110px">Apply</button>
+        </form>
+
+        <div id="eval-alert" class="alert alert-error" role="alert"></div>
+        <div id="eval-success" class="alert alert-success" role="status"></div>
+
+        <div id="eval-groups"></div>
+        <p id="eval-empty" class="empty-state" hidden>
+          No students in this list.
+        </p>
+      </section>
+    </div>
+
+    <div id="eval-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="eval-title" style="width: min(440px, 100%)">
+        <h3 id="eval-title">Approve student</h3>
+        <p id="eval-student-summary" class="panel-sub"></p>
+        <dl class="command-parse-details" id="eval-details" style="margin: 0.75rem 0"></dl>
+        <form id="eval-form" class="stack-form">
+          <input type="hidden" id="eval-student-id" value="" />
+          <label>
+            Notes <span class="cell-muted">(optional)</span>
+            <textarea
+              id="eval-notes"
+              rows="2"
+              maxlength="500"
+              placeholder="Optional note for this semester"
+            ></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="eval-cancel">Cancel</button>
+            <button type="submit" class="btn" id="eval-submit">Approve</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/attendance-common.js"></script>
+    <script src="js/evaluation.js?v=approve-1"></script>
+  </body>
+</html>

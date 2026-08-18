@@ -14,7 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-$user = requireRoles(['Dean']);
+$user = requireRoles(['Dean', 'Checker']);
 
 $departmentId = isset($_GET['departmentId']) ? trim((string) $_GET['departmentId']) : null;
 $dateFrom = isset($_GET['dateFrom']) ? trim((string) $_GET['dateFrom']) : null;

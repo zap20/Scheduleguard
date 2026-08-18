@@ -1,9 +1,12 @@
--- ScheduleGuard seed data
+-- ScheduleGuard seed data (CICT focus)
 -- Default password for every seeded user: Password123!
 --
--- Seed primary keys are short readable IDs (dept-comp, user-faculty, …).
+-- Seed primary keys are short readable IDs (dept-cict, user-cict-dean, …).
 -- New rows created by the app still get UUID v4 via generateUid().
 -- Human-facing person ID is schoolId (YYYY-NNN), unique per role.
+-- For full 24-faculty + 2-month attendance demos, also run:
+--   php database/focus_cict.php
+--   php database/seed_attendance_two_months.php
 
 USE scheduleguard;
 
@@ -16,15 +19,18 @@ TRUNCATE TABLE block;
 TRUNCATE TABLE attendanceRecord;
 TRUNCATE TABLE schedule;
 TRUNCATE TABLE subject;
+TRUNCATE TABLE student;
+TRUNCATE TABLE faculty;
+TRUNCATE TABLE departmentUser;
 TRUNCATE TABLE `user`;
 TRUNCATE TABLE room;
 TRUNCATE TABLE department;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- Departments
+-- Departments (CICT only)
 INSERT INTO department (uid, name, createdAt) VALUES
-('dept-comp', 'College of Computing', NOW()),
-('dept-eng', 'College of Engineering', NOW());
+('dept-cict', 'CICT', NOW()),
+('dept-crim', 'Criminology', NOW());
 
 -- Rooms
 INSERT INTO room (uid, name, building, capacity, roomType, createdAt) VALUES
@@ -35,13 +41,11 @@ INSERT INTO room (uid, name, building, capacity, roomType, createdAt) VALUES
 ('room-206', 'Room 206', 'Annex', 40, 'LECTURE', NOW()),
 ('room-207', 'Room 207', 'Annex', 40, 'LECTURE', NOW());
 
--- Users (1 per role + Checker)
+-- Accounts (identity + auth). Department / faculty / student rows follow.
 -- schoolId format: YYYY-NNN (e.g. 2020-001)
--- Unique per role only — Faculty and Student both use 2020-001 on purpose.
 -- passwordHash = bcrypt("Password123!")
 INSERT INTO `user` (
   uid,
-  departmentId,
   firstName,
   lastName,
   email,
@@ -54,7 +58,6 @@ INSERT INTO `user` (
 ) VALUES
 (
   'user-checker',
-  'dept-comp',
   'Carla',
   'Checker',
   'checker@scheduleguard.test',
@@ -65,26 +68,11 @@ INSERT INTO `user` (
   '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
   NOW()
 ),
--- Faculty 2020-001 (same schoolId as Student below — allowed across roles)
 (
-  'user-faculty',
-  'dept-comp',
-  'Fiona',
-  'Faculty',
-  'faculty@scheduleguard.test',
-  '2020-001',
-  'Faculty',
-  '09010000002',
-  'Active',
-  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
-  NOW()
-),
-(
-  'user-dean',
-  'dept-comp',
+  'user-cict-dean',
   'Dana',
   'Dean',
-  'dean@scheduleguard.test',
+  'cict.dean@scheduleguard.test',
   '2020-201',
   'Dean',
   '09010000003',
@@ -94,7 +82,6 @@ INSERT INTO `user` (
 ),
 (
   'user-hr',
-  NULL,
   'Helen',
   'HR',
   'hr@scheduleguard.test',
@@ -106,11 +93,10 @@ INSERT INTO `user` (
   NOW()
 ),
 (
-  'user-ph',
-  'dept-comp',
+  'user-cict-ph',
   'Paula',
   'ProgramHead',
-  'programhead@scheduleguard.test',
+  'cict.programhead@scheduleguard.test',
   '2020-401',
   'ProgramHead',
   '09010000005',
@@ -118,101 +104,183 @@ INSERT INTO `user` (
   '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
   NOW()
 ),
--- Student 2020-001 (same schoolId as Faculty above — allowed across roles)
 (
-  'user-student',
-  'dept-comp',
+  'user-cict-student',
   'Sam',
   'Student',
-  'student@scheduleguard.test',
+  'cict.student@scheduleguard.test',
   '2020-001',
   'Student',
   '09010000006',
   'Active',
   '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
   NOW()
+),
+(
+  'user-cict-fac-01',
+  'Ana',
+  'Santos',
+  'cict.faculty01@scheduleguard.test',
+  '2020-501',
+  'Faculty',
+  '09010000501',
+  'Active',
+  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
+  NOW()
+),
+(
+  'user-cict-fac-02',
+  'Ben',
+  'Garcia',
+  'cict.faculty02@scheduleguard.test',
+  '2020-502',
+  'Faculty',
+  '09010000502',
+  'Active',
+  '$2y$12$EuTcOG/HaILb.m3MOInBMehesZPzyiIaDR8MxH7kvfuv01IKf7uh.',
+  NOW()
 );
 
--- Curriculum subjects (prerequisite data for schedule + AI optimizer)
+INSERT INTO departmentUser (userId, departmentId, createdAt) VALUES
+('user-checker', 'dept-cict', NOW()),
+('user-cict-dean', 'dept-cict', NOW()),
+('user-hr', 'dept-cict', NOW()),
+('user-cict-ph', 'dept-cict', NOW()),
+('user-cict-student', 'dept-cict', NOW()),
+('user-cict-fac-01', 'dept-cict', NOW()),
+('user-cict-fac-02', 'dept-cict', NOW());
+
+INSERT INTO faculty (userId, employmentType, createdAt) VALUES
+('user-cict-fac-01', 'Regular', NOW()),
+('user-cict-fac-02', 'Regular', NOW());
+
+INSERT INTO student (userId, yearLevel, studentType, enrollmentEvalStatus, createdAt) VALUES
+('user-cict-student', '1st Year', 'Regular', 'Pending', NOW());
+
+-- Subjects (CICT majors + cross-program minor)
 INSERT INTO subject (
-  uid, departmentId, code, title, yearLevel, semester, curriculumYear, units, preferredRoomType, status, createdAt
+  uid, departmentId, servingDepartmentId, code, title, yearLevel, semester, curriculumYear,
+  subjectType, units, lectureHours, labHours, labSessionCount, preferredRoomType, status, createdAt
 ) VALUES
 (
   'subj-db101',
-  'dept-comp',
+  'dept-cict',
+  NULL,
   'DB101',
   'Introduction to Databases',
   '1st Year',
   '1st Semester',
   2026,
+  'MAJOR',
   3.0,
+  1.5,
+  0,
+  1,
   'LECTURE',
   'Active',
   NOW()
 ),
 (
   'subj-it205',
-  'dept-comp',
+  'dept-cict',
+  NULL,
   'IT205',
   'Web Application Development',
   '2nd Year',
   '1st Semester',
   2026,
+  'MAJOR',
   3.0,
+  1.5,
+  3.0,
+  2,
   'LAB',
   'Active',
   NOW()
 ),
 (
   'subj-it322',
-  'dept-comp',
+  'dept-cict',
+  NULL,
   'IT 322',
   'Systems Integration and Architecture',
   '3rd Year',
   '1st Semester',
   2026,
+  'MAJOR',
   3.0,
+  1.5,
+  3.0,
+  2,
   'LAB',
   'Active',
   NOW()
 ),
 (
   'subj-it323',
-  'dept-comp',
+  'dept-cict',
+  NULL,
   'IT 323',
   'Applications Development and Emerging Technologies',
   '3rd Year',
   '1st Semester',
   2026,
+  'MAJOR',
   3.0,
+  1.5,
+  3.0,
+  2,
   'LAB',
   'Active',
   NOW()
 ),
 (
   'subj-it324',
-  'dept-comp',
+  'dept-cict',
+  NULL,
   'IT 324',
   'Information Assurance and Security',
   '3rd Year',
   '1st Semester',
   2026,
+  'MAJOR',
   3.0,
+  1.5,
+  0,
+  1,
+  'LECTURE',
+  'Active',
+  NOW()
+),
+(
+  'subj-if211',
+  'dept-cict',
+  'dept-crim',
+  'IF211',
+  'IT Fundamentals',
+  '1st Year',
+  '1st Semester',
+  2026,
+  'MINOR',
+  3.0,
+  1.5,
+  1.5,
+  1,
   'LECTURE',
   'Active',
   NOW()
 );
 
--- Sample schedules (created by Program Head for Faculty)
+-- Sample schedules
 INSERT INTO schedule (
   uid, facultyId, roomId, departmentId, createdBy, subjectId, day, startTime, endTime, academicYear, semester, status, createdAt
 ) VALUES
 (
   'sched-db101',
-  'user-faculty',
+  'user-cict-fac-01',
   'room-lab101',
-  'dept-comp',
-  'user-ph',
+  'dept-cict',
+  'user-cict-ph',
   'subj-db101',
   'Monday',
   '08:00:00',
@@ -224,10 +292,10 @@ INSERT INTO schedule (
 ),
 (
   'sched-it205',
-  'user-faculty',
+  'user-cict-fac-02',
   'room-205',
-  'dept-comp',
-  'user-ph',
+  'dept-cict',
+  'user-cict-ph',
   'subj-it205',
   'Wednesday',
   '10:00:00',
@@ -239,8 +307,7 @@ INSERT INTO schedule (
 );
 
 -- Attendance sample rows (small demo set).
--- For ~2 months of attendance per faculty (Ana Santos = 8h Absent,
--- Ben Garcia = complete Present), run:
+-- For ~2 months of attendance per faculty, run:
 --   php database/seed_attendance_two_months.php
 INSERT INTO attendanceRecord (
   uid, scheduleId, checkerId, status, isOffline, timestamp, syncedAt
@@ -300,16 +367,13 @@ INSERT INTO attendanceRecord (
   DATE_SUB(NOW(), INTERVAL 5 DAY)
 );
 
--- Enrollment intentionally omitted from seed so Sam Student appears on the
--- Program Head pending list when cleared. Use Enrollment UI to assign + distribute.
-
 -- Sample block (inactive example)
 INSERT INTO block (uid, studentId, departmentId, issuedBy, reason, status, createdAt) VALUES
 (
   'block-1',
-  'user-student',
-  'dept-comp',
-  'user-dean',
+  'user-cict-student',
+  'dept-cict',
+  'user-cict-dean',
   'Seeded example block for testing clearance workflows.',
   'Cleared',
   DATE_SUB(NOW(), INTERVAL 7 DAY)
@@ -319,7 +383,7 @@ INSERT INTO block (uid, studentId, departmentId, issuedBy, reason, status, creat
 INSERT INTO auditLog (uid, userId, relatedRecordId, action, module, message, timestamp) VALUES
 (
   'audit-1',
-  'user-ph',
+  'user-cict-ph',
   'sched-db101',
   'CREATE',
   'schedule',

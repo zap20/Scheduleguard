@@ -15,10 +15,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 
 $user = requireRoles([]);
 
+$period = isset($_GET['period']) ? trim((string) $_GET['period']) : 'monthly';
+
 $payload = match ($user['role']) {
     'Faculty' => buildFacultyDashboard($user['uid']),
     'Student' => buildStudentDashboard($user['uid']),
-    'Dean' => buildDeanDashboard(),
+    'Dean' => buildDeanDashboard($period),
     'HR' => buildHrDashboard(),
     'ProgramHead' => buildProgramHeadDashboard($user['uid']),
     default => [

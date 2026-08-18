@@ -233,14 +233,22 @@
             method: "POST",
             body: JSON.stringify(payload),
           });
-          pendingParsed = res.data.parsed;
+          const data = res && res.data;
+          if (!data || !data.parsed) {
+            onError(
+              (res && res.error) ||
+                "Generate returned an unexpected response. Try again."
+            );
+            return;
+          }
+          pendingParsed = data.parsed;
           renderParseDetails(pendingParsed);
-          renderGeneratedOptions(res.data);
+          renderGeneratedOptions(data);
           onSuccess(
             "Generated " +
-              ((res.data.plans && res.data.plans.length) || 0) +
+              ((data.plans && data.plans.length) || 0) +
               " plan(s). Choose one to save as " +
-              ((res.data.nextBlockNames || []).join(", ") || "the next block(s)") +
+              ((data.nextBlockNames || []).join(", ") || "the next block(s)") +
               "."
           );
         } catch (err) {

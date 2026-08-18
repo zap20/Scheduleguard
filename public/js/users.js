@@ -49,6 +49,31 @@
     return '<span class="status-badge ' + cls + '">' + escapeHtml(status) + "</span>";
   }
 
+  function roleDetails(row) {
+    if (row.role === "Faculty") {
+      const emp = row.employmentType === "PartTime" ? "Part-time" : "Regular";
+      const min = row.minLoad != null ? row.minLoad : emp === "Part-time" ? 3 : 8;
+      return emp + " · min " + min;
+    }
+    if (row.role === "Student") {
+      return (
+        (row.yearLevel || "—") +
+        " · " +
+        (row.studentType || "Regular")
+      );
+    }
+    return "—";
+  }
+
+  function syncRoleFields() {
+    const role = document.getElementById("form-role").value;
+    document.getElementById("faculty-fields").hidden = role !== "Faculty";
+    document.getElementById("student-fields").hidden = role !== "Student";
+    document.getElementById("form-employmentType").required = role === "Faculty";
+    document.getElementById("form-yearLevel").required = role === "Student";
+    document.getElementById("form-studentType").required = role === "Student";
+  }
+
   function queryString() {
     const params = new URLSearchParams();
     if (form.q.value.trim()) params.set("q", form.q.value.trim());
@@ -112,12 +137,20 @@
           escapeHtml(row.role) +
           "</td>" +
           "<td>" +
+          escapeHtml(roleDetails(row)) +
+          "</td>" +
+          "<td>" +
           escapeHtml(row.departmentName || "—") +
           "</td>" +
           "<td>" +
           statusBadge(row.status) +
           "</td>" +
           "<td class=\"action-cell\">" +
+          (row.role === "Faculty" && row.schoolId
+            ? '<button type="button" class="btn btn-secondary btn-small" data-qr="' +
+              escapeHtml(row.uid) +
+              '">QR</button>'
+            : "") +
           '<button type="button" class="btn btn-secondary btn-small" data-edit="' +
           escapeHtml(row.uid) +
           '">Edit</button>' +
@@ -142,6 +175,38 @@
         deactivateUser(btn.getAttribute("data-deactivate"));
       });
     });
+    bodyEl.querySelectorAll("[data-qr]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        openFacultyQr(btn.getAttribute("data-qr"));
+      });
+    });
+  }
+
+  function openFacultyQr(uid) {
+    const row = usersById[uid];
+    if (!row || !row.schoolId) return;
+    const payload = String(row.schoolId).trim();
+    document.getElementById("faculty-qr-title").textContent =
+      "Faculty QR · " + (row.fullName || row.schoolId);
+    document.getElementById("faculty-qr-payload").textContent = payload;
+    const host = document.getElementById("faculty-qr-code");
+    host.innerHTML = "";
+    if (typeof QRCode === "undefined") {
+      host.textContent = "QR library failed to load. Payload: " + payload;
+    } else {
+      new QRCode(host, {
+        text: payload,
+        width: 220,
+        height: 220,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+    document.getElementById("faculty-qr-modal").hidden = false;
+  }
+
+  function closeFacultyQr() {
+    document.getElementById("faculty-qr-modal").hidden = true;
+    document.getElementById("faculty-qr-code").innerHTML = "";
   }
 
   function updatePagination(pagination) {
@@ -200,9 +265,13 @@
     document.getElementById("user-form").reset();
     document.getElementById("form-uid").value = "";
     document.getElementById("form-status").value = "Active";
+    document.getElementById("form-employmentType").value = "Regular";
+    document.getElementById("form-yearLevel").value = "1st Year";
+    document.getElementById("form-studentType").value = "Regular";
     if (roles.length) {
       document.getElementById("form-role").value = roles[0];
     }
+    syncRoleFields();
     openModal(true);
   }
 
@@ -219,7 +288,12 @@
     document.getElementById("form-departmentId").value = row.departmentId || "";
     document.getElementById("form-phoneNumber").value = row.phoneNumber || "";
     document.getElementById("form-status").value = row.status;
+    document.getElementById("form-employmentType").value =
+      row.employmentType || "Regular";
+    document.getElementById("form-yearLevel").value = row.yearLevel || "1st Year";
+    document.getElementById("form-studentType").value = row.studentType || "Regular";
     document.getElementById("form-password").value = "";
+    syncRoleFields();
     openModal(false);
   }
 
@@ -276,6 +350,33 @@
 
   document.getElementById("create-btn").addEventListener("click", openCreate);
   document.getElementById("user-cancel").addEventListener("click", closeModal);
+  document.getElementById("faculty-qr-close").addEventListener("click", closeFacultyQr);
+  document.getElementById("faculty-qr-modal").addEventListener("click", function (e) {
+    if (e.target === document.getElementById("faculty-qr-modal")) closeFacultyQr();
+  });
+  document.getElementById("faculty-qr-print").addEventListener("click", function () {
+    const title = document.getElementById("faculty-qr-title").textContent;
+    const payload = document.getElementById("faculty-qr-payload").textContent;
+    const qrHtml = document.getElementById("faculty-qr-code").innerHTML;
+    const w = window.open("", "_blank", "noopener,noreferrer,width=480,height=640");
+    if (!w) return;
+    w.document.write(
+      "<!DOCTYPE html><html><head><title>" +
+        escapeHtml(title) +
+        "</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px}" +
+        "code{word-break:break-all}</style></head><body>" +
+        "<h1>" +
+        escapeHtml(title) +
+        "</h1><div>" +
+        qrHtml +
+        "</div><p><code>" +
+        escapeHtml(payload) +
+        "</code></p>" +
+        "<script>window.onload=function(){window.print();}<\\/script>" +
+        "</body></html>"
+    );
+    w.document.close();
+  });
 
   document.getElementById("user-form").addEventListener("submit", async function (event) {
     event.preventDefault();
@@ -294,6 +395,13 @@
       status: document.getElementById("form-status").value,
       password: document.getElementById("form-password").value,
     };
+    if (payload.role === "Faculty") {
+      payload.employmentType = document.getElementById("form-employmentType").value;
+    }
+    if (payload.role === "Student") {
+      payload.yearLevel = document.getElementById("form-yearLevel").value;
+      payload.studentType = document.getElementById("form-studentType").value;
+    }
 
     try {
       if (editingUid) {
@@ -331,6 +439,8 @@
       submitBtn.disabled = false;
     }
   });
+
+  document.getElementById("form-role").addEventListener("change", syncRoleFields);
 
   (async function boot() {
     currentUser = await Att.requireRole(["Dean"]);

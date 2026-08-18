@@ -5,14 +5,21 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/database.php';
 require_once __DIR__ . '/Blocking.php';
 require_once __DIR__ . '/Enrollment.php';
+require_once __DIR__ . '/ClassBlock.php';
 require_once __DIR__ . '/Schedule.php';
 require_once __DIR__ . '/Attendance.php';
+require_once __DIR__ . '/Term.php';
 
 /**
  * @return array<string,int>
  */
-function countAttendanceByStatus(?string $facultyId = null): array
-{
+function countAttendanceByStatus(
+    ?string $facultyId = null,
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?int $academicYear = null,
+    ?string $semester = null
+): array {
     $sql = 'SELECT ar.status, COUNT(*) AS cnt
             FROM attendanceRecord ar
             INNER JOIN schedule s ON s.uid = ar.scheduleId
@@ -23,6 +30,22 @@ function countAttendanceByStatus(?string $facultyId = null): array
         $sql .= ' AND s.facultyId = :facultyId';
         $params[':facultyId'] = $facultyId;
     }
+    if ($dateFrom !== null && $dateFrom !== '') {
+        $sql .= ' AND DATE(ar.timestamp) >= :dateFrom';
+        $params[':dateFrom'] = $dateFrom;
+    }
+    if ($dateTo !== null && $dateTo !== '') {
+        $sql .= ' AND DATE(ar.timestamp) <= :dateTo';
+        $params[':dateTo'] = $dateTo;
+    }
+    if ($academicYear !== null) {
+        $sql .= ' AND s.academicYear = :academicYear';
+        $params[':academicYear'] = $academicYear;
+    }
+    if ($semester !== null && $semester !== '') {
+        $sql .= ' AND s.semester = :semester';
+        $params[':semester'] = $semester;
+    }
 
     $sql .= ' GROUP BY ar.status';
 
@@ -32,25 +55,31 @@ function countAttendanceByStatus(?string $facultyId = null): array
     $counts = [
         'Present' => 0,
         'Late' => 0,
-        'WrongRoom' => 0,
-        'NoSchedule' => 0,
         'Absent' => 0,
     ];
 
     foreach ($stmt->fetchAll() as $row) {
         $status = (string) $row['status'];
-        $counts[$status] = (int) $row['cnt'];
+        // WrongRoom / NoSchedule are checker warning notices, not attendance statuses.
+        if (isset($counts[$status])) {
+            $counts[$status] = (int) $row['cnt'];
+        }
     }
 
     return $counts;
 }
 
 /**
- * @return array{labels: list<string>, values: list<int>}
+ * @return array{labels: list<string>, values: list<int>, total:int}
  */
-function attendanceStatusChartPayload(?string $facultyId = null): array
-{
-    $counts = countAttendanceByStatus($facultyId);
+function attendanceStatusChartPayload(
+    ?string $facultyId = null,
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?int $academicYear = null,
+    ?string $semester = null
+): array {
+    $counts = countAttendanceByStatus($facultyId, $dateFrom, $dateTo, $academicYear, $semester);
     return [
         'labels' => array_keys($counts),
         'values' => array_values($counts),
@@ -143,10 +172,18 @@ function buildStudentDashboard(string $studentId): array
 /**
  * @return array<string,mixed>
  */
-function buildDeanDashboard(): array
+function buildDeanDashboard(string $period = 'monthly'): array
 {
     $conflicts = fetchSchedules('conflict', null);
-    $chart = attendanceStatusChartPayload(null);
+    $window = resolveAttendancePeriod($period);
+    $chart = attendanceStatusChartPayload(
+        null,
+        $window['dateFrom'],
+        $window['dateTo'],
+        $window['academicYear'],
+        $window['semester']
+    );
+    $term = currentTermWindow();
 
     $statusCounts = db()->query(
         "SELECT LOWER(status) AS status, COUNT(*) AS cnt
@@ -169,22 +206,25 @@ function buildDeanDashboard(): array
     return [
         'role' => 'Dean',
         'shortcuts' => [
-            ['href' => 'curriculum.html', 'label' => 'Curriculum subjects', 'tone' => 'primary'],
+            ['href' => 'curriculum.html', 'label' => 'Subjects', 'tone' => 'primary'],
             ['href' => 'rooms.html', 'label' => 'LAB / LECTURE rooms', 'tone' => 'primary'],
-            ['href' => 'student-schedule-dean.html', 'label' => 'Student schedule / blocks', 'tone' => 'primary'],
+            ['href' => 'student-schedule-dean.html', 'label' => 'Class blocks', 'tone' => 'primary'],
             ['href' => 'faculty-schedule-dean.html', 'label' => 'Faculty schedule', 'tone' => 'primary'],
+            ['href' => 'tbf-schedule-dean.html', 'label' => 'TBF (unassigned)', 'tone' => 'primary'],
             ['href' => 'users.html', 'label' => 'User management', 'tone' => 'secondary'],
             ['href' => 'audit.html', 'label' => 'Audit trail', 'tone' => 'secondary'],
-            ['href' => 'attendance-dean.html', 'label' => 'Attendance oversight', 'tone' => 'secondary'],
         ],
         'conflicts' => [
             'total' => count($conflicts),
             'items' => array_map(static function (array $row): array {
+                $blockName = trim((string) ($row['blockName'] ?? ''));
                 return [
                     'uid' => $row['uid'],
                     'subjectCode' => $row['subjectCode'],
                     'subjectName' => $row['subjectName'],
                     'facultyName' => $row['facultyName'],
+                    'blockName' => $blockName,
+                    'classBlockId' => (string) ($row['classBlockId'] ?? ''),
                     'day' => $row['day'],
                     'startTime' => $row['startTime'],
                     'endTime' => $row['endTime'],
@@ -195,6 +235,29 @@ function buildDeanDashboard(): array
         ],
         'attendanceChart' => $chart,
         'scheduleBreakdown' => $scheduleBreakdown,
+        'topAbsent' => fetchTopAbsentFaculty(
+            $window['academicYear'],
+            $window['semester'],
+            null,
+            10,
+            $window['dateFrom'],
+            $window['dateTo']
+        ),
+        'topPresent' => fetchTopPresentFaculty(
+            $window['academicYear'],
+            $window['semester'],
+            null,
+            10,
+            $window['dateFrom'],
+            $window['dateTo']
+        ),
+        'graceMinutes' => attendanceGraceMinutes(),
+        'period' => $window,
+        'term' => [
+            'label' => formatTermLabel((int) $term['academicYear'], (string) $term['semester']),
+            'academicYear' => (int) $term['academicYear'],
+            'semester' => (string) $term['semester'],
+        ],
     ];
 }
 
@@ -262,6 +325,15 @@ function buildProgramHeadDashboard(string $userId): array
         ],
         'pendingEnrollments' => [
             'count' => count($pending),
+            'href' => 'enrollment.html',
+        ],
+        'classBlocks' => [
+            'count' => count(fetchClassBlocks(
+                $departmentId,
+                null,
+                (int) currentTermWindow()['academicYear'],
+                (string) currentTermWindow()['semester']
+            )),
             'href' => 'enrollment.html',
         ],
         'blockingChart' => [

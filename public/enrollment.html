@@ -3,14 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enrollment — ScheduleGuard</title>
+    <title>Class blocks / Enrollment — ScheduleGuard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/app.css?v=parse-card-1" />
+    <script src="js/theme-boot.js"></script>
+    <link rel="stylesheet" href="css/schedule-grid.css?v=tt-8" />
   </head>
   <body>
     <div class="app-shell">
@@ -18,7 +20,7 @@
         <div>
           <h1>ScheduleGuard</h1>
           <div class="meta">
-            Enrollment &amp; distribution · <span id="user-label">…</span>
+            Class blocks / Enrollment · <span id="user-label">…</span>
           </div>
         </div>
         <div class="topbar-actions">
@@ -26,34 +28,69 @@
         </div>
       </header>
 
-      <section class="panel" style="margin-bottom: 1rem">
+      <section class="panel" style="margin-bottom: 1rem" id="blocks-panel">
         <div class="panel-head">
           <div>
-            <h2>Add students to a class block</h2>
+            <h2>Class blocks</h2>
             <p class="panel-sub">
-              Term: <strong id="term-label">…</strong>. Dean creates the block first.
-              You assign cleared students to that block. If the block already has
-              confirmed schedules, enrollments are created automatically (status
-              <strong>assigned</strong>).
+              Term: <strong id="term-label">…</strong>. Same card layout as Dean class blocks.
+              Evaluate students under <strong>Evaluation</strong>, then add only
+              <strong>Approved</strong> students here.
             </p>
           </div>
-          <div class="count-chip"><span id="member-count">0</span> in block</div>
+          <div class="panel-head-actions">
+            <div class="count-chip"><span id="blocks-count">0</span> blocks</div>
+          </div>
         </div>
 
         <div id="enrollment-alert" class="alert alert-error" role="alert"></div>
         <div id="enrollment-success" class="alert alert-success" role="status"></div>
 
+        <div id="blocks-cards-view">
+          <div id="blocks-cards" class="schedule-card-grid"></div>
+          <p id="blocks-empty" class="empty-state" hidden>
+            No class blocks for this term yet. Ask the Dean to create blocks under Schedules → Class blocks.
+          </p>
+        </div>
+
+        <div id="blocks-detail-view" hidden>
+          <div class="faculty-tt-detail-head">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="blocks-back-to-cards"
+              style="width: auto; min-width: 0"
+            >
+              ← Back to cards
+            </button>
+            <h3 id="block-detail-title">Weekly grid</h3>
+            <p id="block-detail-sub" class="panel-sub" style="margin: 0"></p>
+          </div>
+          <div id="block-schedule-grid"></div>
+          <p id="block-schedule-empty" class="empty-state" hidden>
+            No schedules linked to this block yet.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel" id="enroll-panel" hidden style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>Add Approved students</h2>
+            <p class="panel-sub">
+              Only students <strong>Approved</strong> under Evaluation can be assigned.
+              Enrollments are created for linked schedules (status <strong>assigned</strong>).
+            </p>
+          </div>
+          <div class="count-chip"><span id="member-count">0</span> in block</div>
+        </div>
+
         <form id="enroll-form" class="filter-bar enroll-bar">
-          <label>
-            Class block
-            <select id="classBlockId" name="classBlockId" required>
-              <option value="">Select block…</option>
-            </select>
-          </label>
-          <label>
-            Cleared student
+          <input type="hidden" id="classBlockId" name="classBlockId" value="" />
+          <label class="grow">
+            Approved student
             <select id="studentId" name="studentId" required>
-              <option value="">Select student…</option>
+              <option value="">Select approved student…</option>
             </select>
           </label>
           <button class="btn" type="submit" style="width: auto; min-width: 140px">
@@ -74,8 +111,32 @@
             <tbody id="members-body"></tbody>
           </table>
           <p id="members-empty" class="empty-state" hidden>
-            Select a class block to see its students, or add the first student above.
+            No students in this block yet. Approve students under Evaluation, then add them here.
           </p>
+        </div>
+      </section>
+
+      <section class="panel" id="blocks-list-panel" hidden style="margin-bottom: 1rem">
+        <div class="panel-head">
+          <div>
+            <h2>Meeting list</h2>
+            <p class="panel-sub">Rows for the selected class block.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Subject code</th>
+                <th>Instructor</th>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Room</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="block-schedule-body"></tbody>
+          </table>
         </div>
       </section>
 
@@ -112,6 +173,7 @@
     <script src="js/api.js"></script>
     <script src="js/shell.js"></script>
     <script src="js/attendance-common.js"></script>
-    <script src="js/enrollment.js"></script>
+    <script src="js/schedule-grid.js?v=meet-5"></script>
+    <script src="js/enrollment.js?v=eval-nav-1"></script>
   </body>
 </html>

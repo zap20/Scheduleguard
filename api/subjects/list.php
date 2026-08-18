@@ -16,9 +16,16 @@ $yearLevel = isset($_GET['yearLevel']) ? trim((string) $_GET['yearLevel']) : '';
 $semester = isset($_GET['semester']) ? trim((string) $_GET['semester']) : '';
 $status = isset($_GET['status']) ? trim((string) $_GET['status']) : SUBJECT_STATUS_ACTIVE;
 $search = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
+$subjectType = isset($_GET['subjectType']) ? trim((string) $_GET['subjectType']) : '';
+$servingDepartmentId = isset($_GET['servingDepartmentId'])
+    ? trim((string) $_GET['servingDepartmentId'])
+    : '';
 
 if ($status === 'all') {
     $status = null;
+}
+if ($subjectType === 'all') {
+    $subjectType = '';
 }
 
 if ($user['role'] === 'ProgramHead') {
@@ -35,7 +42,11 @@ try {
         $yearLevel !== '' ? $yearLevel : null,
         $semester !== '' ? $semester : null,
         $status,
-        $search
+        $search,
+        null,
+        $subjectType !== '' ? $subjectType : null,
+        false,
+        $servingDepartmentId !== '' ? $servingDepartmentId : null
     );
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);
@@ -47,12 +58,15 @@ jsonSuccess([
         'departmentId' => $departmentId !== '' ? $departmentId : null,
         'yearLevel' => $yearLevel !== '' ? $yearLevel : null,
         'semester' => $semester !== '' ? $semester : null,
+        'subjectType' => $subjectType !== '' ? $subjectType : null,
+        'servingDepartmentId' => $servingDepartmentId !== '' ? $servingDepartmentId : null,
         'status' => $status,
         'q' => $search !== '' ? $search : null,
     ],
     'meta' => [
         'yearLevels' => SUBJECT_YEAR_LEVELS,
         'semesters' => SUBJECT_SEMESTERS,
+        'subjectTypes' => SUBJECT_TYPES,
     ],
     'canWrite' => true,
 ]);

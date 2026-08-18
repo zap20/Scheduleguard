@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/app.css" />
+    <script src="js/theme-boot.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -74,6 +75,7 @@
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>Details</th>
                 <th>Department</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -148,6 +150,33 @@
               </select>
             </label>
           </div>
+          <div class="form-row" id="faculty-fields" hidden>
+            <label>
+              Faculty status
+              <select id="form-employmentType" name="employmentType">
+                <option value="Regular">Regular (min load 8)</option>
+                <option value="PartTime">Part-time (min load 3)</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row" id="student-fields" hidden>
+            <label>
+              Year level
+              <select id="form-yearLevel" name="yearLevel">
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </label>
+            <label>
+              Student type
+              <select id="form-studentType" name="studentType">
+                <option value="Regular">Regular</option>
+                <option value="Irregular">Irregular</option>
+              </select>
+            </label>
+          </div>
           <label>
             Password <span id="password-hint">(required)</span>
             <input id="form-password" name="password" type="password" minlength="8" autocomplete="new-password" />
@@ -160,9 +189,25 @@
       </div>
     </div>
 
+    <div id="faculty-qr-modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-labelledby="faculty-qr-title">
+        <h3 id="faculty-qr-title">Faculty QR</h3>
+        <p class="panel-sub">Checker scans this code — payload is the faculty ID number (schoolId).</p>
+        <div id="faculty-qr-code" style="display:flex;justify-content:center;padding:12px 0"></div>
+        <p class="panel-sub" style="word-break:break-all">
+          Payload: <code id="faculty-qr-payload"></code>
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="faculty-qr-print" style="width: auto">Print</button>
+          <button type="button" class="btn" id="faculty-qr-close" style="width: auto; min-width: 100px">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="js/api.js"></script>
     <script src="js/shell.js"></script>
     <script src="js/attendance-common.js"></script>
-    <script src="js/users.js"></script>
+    <script src="js/users.js?v=fac-qr-1"></script>
   </body>
 </html>

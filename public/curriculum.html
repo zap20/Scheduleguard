@@ -3,21 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Curriculum — ScheduleGuard</title>
+    <title>Subjects — ScheduleGuard</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/app.css?v=20260812-serves7" />
+    <script src="js/theme-boot.js"></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div>
           <h1>ScheduleGuard</h1>
-          <div class="meta">Curriculum subjects · <span id="user-label">…</span></div>
+          <div class="meta">Subjects · <span id="user-label">…</span></div>
         </div>
         <div class="topbar-actions">
           <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
@@ -27,10 +29,11 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>Curriculum management</h2>
+            <h2>Subjects</h2>
             <p class="panel-sub">
-              Define subjects by year level and semester for your department. This map feeds the
-              AI schedule optimizer and replaces free-text subject names on schedule rows.
+              Define major and minor subjects with lecture/lab hours. Enter total lab hours (e.g. 3
+              or 6); when generating a schedule the lab is split into two day-sessions based on
+              availability. Use <strong>Edit</strong> to set Type and Serving department (Serves).
             </p>
           </div>
           <div class="panel-head-actions">
@@ -46,6 +49,21 @@
             Department
             <select id="filter-departmentId" name="departmentId">
               <option value="">All departments</option>
+            </select>
+          </label>
+          <label>
+            Type
+            <select id="filter-subjectType" name="subjectType">
+              <option value="">All types</option>
+              <option value="MAJOR">Major</option>
+              <option value="MINOR">Minor</option>
+            </select>
+          </label>
+          <label>
+            Serves
+            <select id="filter-servingDepartmentId" name="servingDepartmentId">
+              <option value="">All</option>
+              <option value="none">None (majors)</option>
             </select>
           </label>
           <label>
@@ -87,26 +105,53 @@
 
         <div id="curriculum-groups"></div>
         <p id="curriculum-empty" class="empty-state" hidden>
-          No subjects match these filters. Add curriculum subjects to unlock schedule generation.
+          No subjects match these filters. Add subjects to unlock schedule generation.
         </p>
       </section>
     </div>
 
     <div id="subject-modal" class="modal" hidden>
-      <div class="modal-card" role="dialog" aria-labelledby="subject-modal-title">
+      <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="subject-modal-title">
         <h3 id="subject-modal-title">Add subject</h3>
-        <p class="panel-sub">Assign the subject to a year level and semester within the department.</p>
-        <form id="subject-form" class="stack-form">
+        <p class="panel-sub">
+          Major = your program core. Minor = taught by your faculty for another program (set Serving
+          department).
+        </p>
+        <div id="subject-modal-alert" class="alert alert-error" role="alert"></div>
+        <form id="subject-form" class="stack-form" novalidate>
           <input type="hidden" id="subject-uid" name="uid" value="" />
           <label id="subject-department-wrap">
-            Department
+            Owning department
             <select id="subject-departmentId" name="departmentId" required>
               <option value="">Select department…</option>
             </select>
           </label>
           <label>
+            Type
+            <select id="subject-subjectType" name="subjectType" required>
+              <option value="MAJOR">Major</option>
+              <option value="MINOR">Minor</option>
+            </select>
+          </label>
+          <label id="subject-serving-wrap">
+            Serving department (Serves)
+            <input
+              id="subject-servingDepartmentName"
+              name="servingDepartmentName"
+              type="text"
+              list="serving-department-suggestions"
+              maxlength="150"
+              placeholder="Type CICT, Criminology, or a new program name"
+              autocomplete="off"
+            />
+            <datalist id="serving-department-suggestions"></datalist>
+            <span class="panel-sub" style="margin:0.25rem 0 0;font-weight:400">
+              Type a name and Save. New names are added to departments. Leave blank for Major (no Serves).
+            </span>
+          </label>
+          <label>
             Code
-            <input id="subject-code" name="code" type="text" required maxlength="50" placeholder="e.g. IT 322" />
+            <input id="subject-code" name="code" type="text" required maxlength="50" placeholder="e.g. IF211" />
           </label>
           <label>
             Title
@@ -116,10 +161,10 @@
               type="text"
               required
               maxlength="200"
-              placeholder="e.g. Systems Integration and Architecture"
+              placeholder="e.g. IT Fundamentals"
             />
           </label>
-            <div class="form-row">
+          <div class="form-row form-row-2">
             <label>
               Year level
               <select id="subject-yearLevel" name="yearLevel" required>
@@ -137,22 +182,56 @@
                 <option value="Summer">Summer</option>
               </select>
             </label>
+          </div>
+          <div class="form-row form-row-2">
             <label>
               Curriculum year
-              <input id="subject-curriculumYear" name="curriculumYear" type="number" min="2000" max="2100" value="2026" required />
-            </label>
-            <label>
-              Room type
-              <select id="subject-preferredRoomType" name="preferredRoomType" required>
-                <option value="LECTURE">LECTURE</option>
-                <option value="LAB">LAB</option>
-              </select>
+              <input
+                id="subject-curriculumYear"
+                name="curriculumYear"
+                type="number"
+                min="2000"
+                max="2100"
+                value="2026"
+                required
+              />
             </label>
             <label>
               Units
               <input id="subject-units" name="units" type="number" min="0.5" max="12" step="0.5" value="3" required />
             </label>
           </div>
+          <div class="form-row form-row-2">
+            <label>
+              Lecture hours
+              <input
+                id="subject-lectureHours"
+                name="lectureHours"
+                type="number"
+                min="0"
+                max="12"
+                step="0.5"
+                value="1.5"
+              />
+            </label>
+            <label>
+              Lab hours
+              <input
+                id="subject-labHours"
+                name="labHours"
+                type="number"
+                min="0"
+                max="12"
+                step="0.5"
+                value="0"
+                placeholder="e.g. 3 or 6"
+              />
+            </label>
+          </div>
+          <p class="panel-sub" id="subject-session-hint">
+            Enter total lab hours (3, 6, …). When a schedule is created, the lab is split into two
+            day-sessions wherever free slots allow.
+          </p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="subject-cancel" style="width: auto">Cancel</button>
             <button type="submit" class="btn" style="width: auto; min-width: 120px">Save</button>
@@ -161,10 +240,10 @@
       </div>
     </div>
 
-    <script src="js/api.js"></script>
-    <script src="js/auth.js"></script>
-    <script src="js/attendance-common.js"></script>
-    <script src="js/shell.js"></script>
-    <script src="js/curriculum.js"></script>
+    <script src="js/api.js?v=20260812-serves7"></script>
+    <script src="js/auth.js?v=20260812-serves7"></script>
+    <script src="js/attendance-common.js?v=20260812-serves7"></script>
+    <script src="js/shell.js?v=20260812-serves7"></script>
+    <script src="js/curriculum.js?v=20260812-serves7"></script>
   </body>
 </html>

@@ -15,11 +15,13 @@ function generateUid(): string
 }
 
 /**
- * Load a user's departmentId from the database.
+ * Load a user's departmentId from department membership.
  */
 function userDepartmentId(string $userId): ?string
 {
-    $stmt = db()->prepare('SELECT departmentId FROM `user` WHERE uid = :uid LIMIT 1');
+    $stmt = db()->prepare(
+        'SELECT departmentId FROM departmentUser WHERE userId = :uid LIMIT 1'
+    );
     $stmt->execute([':uid' => $userId]);
     $value = $stmt->fetchColumn();
 
@@ -28,6 +30,28 @@ function userDepartmentId(string $userId): ?string
     }
 
     return (string) $value;
+}
+
+/**
+ * Replace a user's department membership (one department per account).
+ */
+function setUserDepartment(string $userId, ?string $departmentId): void
+{
+    $stmt = db()->prepare('DELETE FROM departmentUser WHERE userId = :uid');
+    $stmt->execute([':uid' => $userId]);
+
+    if ($departmentId === null || $departmentId === '') {
+        return;
+    }
+
+    $ins = db()->prepare(
+        'INSERT INTO departmentUser (userId, departmentId, createdAt)
+         VALUES (:uid, :departmentId, NOW())'
+    );
+    $ins->execute([
+        ':uid' => $userId,
+        ':departmentId' => $departmentId,
+    ]);
 }
 
 /**

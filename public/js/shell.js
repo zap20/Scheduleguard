@@ -14,17 +14,17 @@
     ],
     Dean: [
       { href: "app.html", label: "Dashboard" },
-      { href: "curriculum.html", label: "Curriculum" },
+      { href: "curriculum.html", label: "Subjects" },
       { href: "rooms.html", label: "Rooms" },
       {
         label: "Schedules",
         children: [
-          { href: "student-schedule-dean.html", label: "Student schedule" },
+          { href: "student-schedule-dean.html", label: "Class blocks" },
           { href: "faculty-schedule-dean.html", label: "Faculty schedule" },
+          { href: "tbf-schedule-dean.html", label: "TBF (unassigned)" },
         ],
       },
       { href: "users.html", label: "Users" },
-      { href: "attendance-dean.html", label: "Attendance oversight" },
       { href: "blocking.html", label: "Blocking" },
       { href: "audit.html", label: "Audit trail" },
     ],
@@ -35,8 +35,9 @@
     ],
     ProgramHead: [
       { href: "app.html", label: "Dashboard" },
-      { href: "curriculum.html", label: "Curriculum" },
-      { href: "enrollment.html", label: "Enrollment" },
+      { href: "curriculum.html", label: "Subjects" },
+      { href: "evaluation.html", label: "Evaluation" },
+      { href: "enrollment.html", label: "Class blocks / Enrollment" },
       { href: "blocking.html", label: "Blocking" },
     ],
     Checker: [{ href: "app.html", label: "Dashboard" }],
@@ -46,6 +47,7 @@
     "schedules-home.html": true,
     "student-schedule-dean.html": true,
     "faculty-schedule-dean.html": true,
+    "tbf-schedule-dean.html": true,
     "schedules.html": true,
     "class-blocks.html": true,
   };
@@ -56,6 +58,35 @@
     return parts[parts.length - 1] || "app.html";
   }
 
+  const THEME_KEY = "scheduleguard-theme";
+
+  function currentTheme() {
+    const saved = window.localStorage.getItem(THEME_KEY);
+    if (saved === "dark" || saved === "light") return saved;
+    return "light";
+  }
+
+  function applyTheme(theme) {
+    const next = theme === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    window.localStorage.setItem(THEME_KEY, next);
+    document.querySelectorAll(".theme-toggle").forEach(function (btn) {
+      const isDark = next === "dark";
+      btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+      btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+      btn.title = isDark ? "Light theme" : "Dark theme";
+      const icon = btn.querySelector(".theme-toggle__icon");
+      if (icon) icon.textContent = isDark ? "☀" : "☾";
+    });
+  }
+
+  function toggleTheme() {
+    applyTheme(currentTheme() === "dark" ? "light" : "dark");
+  }
+
+  // Apply saved theme ASAP to avoid a light flash.
+  applyTheme(currentTheme());
+
   function ensureShellMarkup() {
     if (document.getElementById("app-drawer")) return;
 
@@ -65,10 +96,7 @@
     drawer.setAttribute("aria-label", "Modules");
     drawer.innerHTML =
       '<div class="drawer-head">' +
-      "<div>" +
-      '<p class="drawer-brand">ScheduleGuard</p>' +
-      '<p class="drawer-user" id="drawer-user-label">…</p>' +
-      "</div>" +
+      '<img class="brand-logo brand-logo--seait" src="img/seait-logo.png" alt="SEAIT" width="96" height="96" />' +
       "</div>" +
       '<nav class="drawer-nav" id="drawer-nav" aria-label="Modules"></nav>' +
       '<div class="drawer-foot">' +
@@ -77,10 +105,57 @@
 
     document.body.classList.add("has-app-drawer");
     document.body.insertBefore(drawer, document.body.firstChild);
+    decorateTopbars();
 
     document.querySelectorAll('.topbar a.text-link[href="app.html"]').forEach(function (a) {
       a.hidden = true;
     });
+
+    // Sign out lives in the sidebar only — hide duplicate topbar buttons.
+    document.querySelectorAll(".topbar-actions #logout-btn, .topbar #logout-btn").forEach(function (btn) {
+      btn.hidden = true;
+    });
+  }
+
+  function decorateTopbars() {
+    document.querySelectorAll(".topbar").forEach(function (topbar) {
+      topbar.classList.add("app-bar");
+      let actions = topbar.querySelector(".topbar-actions");
+      if (!actions) {
+        actions = document.createElement("div");
+        actions.className = "topbar-actions";
+        topbar.appendChild(actions);
+      }
+
+      if (!actions.querySelector(".brand-logo--cict")) {
+        const logo = document.createElement("img");
+        logo.className = "brand-logo brand-logo--cict";
+        logo.src = "img/cict-logo.png";
+        logo.alt = "CICT";
+        logo.width = 96;
+        logo.height = 96;
+        actions.insertBefore(logo, actions.firstChild);
+      }
+
+      if (!actions.querySelector(".theme-toggle")) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "theme-toggle";
+        toggle.innerHTML = '<span class="theme-toggle__icon" aria-hidden="true">☾</span>';
+        toggle.addEventListener("click", toggleTheme);
+        // Place to the right of the CICT logo.
+        const cict = actions.querySelector(".brand-logo--cict");
+        if (cict && cict.nextSibling) {
+          actions.insertBefore(toggle, cict.nextSibling);
+        } else if (cict) {
+          actions.appendChild(toggle);
+        } else {
+          actions.insertBefore(toggle, actions.firstChild);
+        }
+      }
+    });
+
+    applyTheme(currentTheme());
   }
 
   function renderNav(role) {
@@ -201,6 +276,9 @@
   window.ScheduleGuardShell = {
     init: initShell,
     modules: MODULES,
+    applyTheme: applyTheme,
+    toggleTheme: toggleTheme,
+    currentTheme: currentTheme,
   };
 
   if (document.readyState === "loading") {

@@ -82,12 +82,44 @@
         escapeHtml(row.capacity) +
         "</td>" +
         '<td class="row-actions">' +
+        '<button type="button" class="btn btn-secondary btn-qr" data-uid="' +
+        escapeHtml(row.uid) +
+        '" style="width:auto;min-width:70px">QR</button> ' +
         '<button type="button" class="btn btn-secondary btn-edit" data-uid="' +
         escapeHtml(row.uid) +
         '" style="width:auto;min-width:70px">Edit</button>' +
         "</td>";
       bodyEl.appendChild(tr);
     });
+  }
+
+  function roomQrPayload(uid) {
+    return "SGROOM:" + uid;
+  }
+
+  function openQrModal(row) {
+    const payload = roomQrPayload(row.uid);
+    document.getElementById("qr-modal-title").textContent =
+      "QR · " + row.building + " / " + row.name;
+    document.getElementById("qr-payload").textContent = payload;
+    const host = document.getElementById("qr-code");
+    host.innerHTML = "";
+    if (typeof QRCode === "undefined") {
+      host.textContent = "QR library failed to load. Payload: " + payload;
+    } else {
+      new QRCode(host, {
+        text: payload,
+        width: 220,
+        height: 220,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+    document.getElementById("qr-modal").hidden = false;
+  }
+
+  function closeQrModal() {
+    document.getElementById("qr-modal").hidden = true;
+    document.getElementById("qr-code").innerHTML = "";
   }
 
   async function loadRooms() {
@@ -131,12 +163,51 @@
   });
 
   bodyEl.addEventListener("click", function (e) {
+    const qrBtn = e.target.closest(".btn-qr");
+    if (qrBtn) {
+      const row = rooms.find(function (r) {
+        return r.uid === qrBtn.getAttribute("data-uid");
+      });
+      if (row) openQrModal(row);
+      return;
+    }
     const btn = e.target.closest(".btn-edit");
     if (!btn) return;
     const row = rooms.find(function (r) {
       return r.uid === btn.getAttribute("data-uid");
     });
     if (row) openModal(row);
+  });
+
+  document.getElementById("qr-close").addEventListener("click", closeQrModal);
+  document.getElementById("qr-modal").addEventListener("click", function (e) {
+    if (e.target === document.getElementById("qr-modal")) closeQrModal();
+  });
+  document.getElementById("qr-print").addEventListener("click", function () {
+    const title = document.getElementById("qr-modal-title").textContent;
+    const payload = document.getElementById("qr-payload").textContent;
+    const qrHtml = document.getElementById("qr-code").innerHTML;
+    const w = window.open("", "_blank", "noopener,noreferrer,width=480,height=640");
+    if (!w) {
+      showError("Pop-up blocked. Allow pop-ups to print the QR.");
+      return;
+    }
+    w.document.write(
+      "<!DOCTYPE html><html><head><title>" +
+        escapeHtml(title) +
+        "</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px}" +
+        "code{word-break:break-all}</style></head><body>" +
+        "<h1>" +
+        escapeHtml(title) +
+        "</h1><div>" +
+        qrHtml +
+        "</div><p><code>" +
+        escapeHtml(payload) +
+        "</code></p>" +
+        "<script>window.onload=function(){window.print();}<\\/script>" +
+        "</body></html>"
+    );
+    w.document.close();
   });
 
   form.addEventListener("submit", async function (e) {

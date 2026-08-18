@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Dean view of distributed student schedules (same data students see).
+ * Dean view of enrolled student schedules (assigned or distributed).
  */
 
 require_once dirname(__DIR__, 2) . '/includes/bootstrap.php';

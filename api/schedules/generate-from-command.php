@@ -63,16 +63,14 @@ try {
 
     $plans = generateScheduleCommandPlans($input, $parsed, $planCount);
     if ($plans === []) {
-        jsonError(
-            'Could not build plans: no free rooms for the requested subjects/blocks/days. '
-            . 'Add rooms, free existing bookings, use more weekdays, or fewer blocks.',
-            422
-        );
+        jsonError(diagnoseScheduleCommandFailure($input, $parsed), 422);
     }
 
     $previewNames = $plans[0]['previewBlockNames'] ?? [];
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);
+} catch (Throwable $e) {
+    jsonError('Schedule generation failed: ' . $e->getMessage(), 500);
 }
 
 logAudit(

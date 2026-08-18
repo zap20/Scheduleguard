@@ -9,6 +9,14 @@
     Absent: "status-absent",
   };
 
+  const STATUS_LABEL = {
+    Present: "Present",
+    Late: "Late",
+    Absent: "Absent",
+    WrongRoom: "Wrong room (warning)",
+    NoSchedule: "No schedule (warning)",
+  };
+
   /**
    * Refresh the signed-in user from the server (role/status are never trusted
    * from localStorage alone), then enforce client-side role gating.
@@ -61,7 +69,8 @@
 
   function statusBadge(status) {
     const cls = STATUS_CLASS[status] || "status-none";
-    return '<span class="status-badge ' + cls + '">' + escapeHtml(status) + "</span>";
+    const label = STATUS_LABEL[status] || status;
+    return '<span class="status-badge ' + cls + '">' + escapeHtml(label) + "</span>";
   }
 
   function formatCounted(counted) {

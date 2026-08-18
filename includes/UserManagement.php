@@ -18,6 +18,112 @@ const USER_ROLES = [
     'Student',
 ];
 
+const FACULTY_EMPLOYMENT_TYPES = ['Regular', 'PartTime'];
+const STUDENT_TYPES = ['Regular', 'Irregular'];
+const USER_YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+
+/** Minimum teaching load (hours÷3) by faculty employment type. */
+const FACULTY_MIN_LOAD_REGULAR = 8.0;
+const FACULTY_MIN_LOAD_PART_TIME = 3.0;
+
+function facultyMinLoadForEmploymentType(?string $employmentType): float
+{
+    $type = normalizeFacultyEmploymentType($employmentType, false);
+    return $type === 'PartTime' ? FACULTY_MIN_LOAD_PART_TIME : FACULTY_MIN_LOAD_REGULAR;
+}
+
+function normalizeFacultyEmploymentType(?string $raw, bool $required = false): ?string
+{
+    $value = trim((string) ($raw ?? ''));
+    if ($value === '') {
+        if ($required) {
+            throw new InvalidArgumentException('employmentType is required for Faculty (Regular or PartTime).');
+        }
+        return null;
+    }
+    // Accept Part-time / Part time aliases
+    $norm = str_replace(['-', ' '], '', $value);
+    if (strcasecmp($norm, 'PartTime') === 0 || strcasecmp($value, 'Part-time') === 0) {
+        return 'PartTime';
+    }
+    if (strcasecmp($value, 'Regular') === 0) {
+        return 'Regular';
+    }
+    throw new InvalidArgumentException('employmentType must be Regular or PartTime.');
+}
+
+function normalizeStudentType(?string $raw, bool $required = false): ?string
+{
+    $value = trim((string) ($raw ?? ''));
+    if ($value === '') {
+        if ($required) {
+            throw new InvalidArgumentException('studentType is required for Student (Regular or Irregular).');
+        }
+        return null;
+    }
+    if (!in_array($value, STUDENT_TYPES, true)) {
+        throw new InvalidArgumentException('studentType must be Regular or Irregular.');
+    }
+    return $value;
+}
+
+function normalizeUserYearLevel(?string $raw, bool $required = false): ?string
+{
+    $value = trim((string) ($raw ?? ''));
+    if ($value === '') {
+        if ($required) {
+            throw new InvalidArgumentException('yearLevel is required for Student.');
+        }
+        return null;
+    }
+    if (!in_array($value, USER_YEAR_LEVELS, true)) {
+        throw new InvalidArgumentException('yearLevel must be one of: ' . implode(', ', USER_YEAR_LEVELS));
+    }
+    return $value;
+}
+
+/**
+ * Role-specific fields for Faculty / Student.
+ *
+ * @return array{employmentType:?string,yearLevel:?string,studentType:?string}
+ */
+function normalizeRoleSpecificUserFields(string $role, array $input, ?array $existing = null): array
+{
+    $employmentType = null;
+    $yearLevel = null;
+    $studentType = null;
+
+    if ($role === 'Faculty') {
+        $raw = array_key_exists('employmentType', $input)
+            ? $input['employmentType']
+            : ($existing['employmentType'] ?? 'Regular');
+        $employmentType = normalizeFacultyEmploymentType(
+            $raw === null || $raw === '' ? 'Regular' : (string) $raw,
+            true
+        );
+    } elseif ($role === 'Student') {
+        $rawYear = array_key_exists('yearLevel', $input)
+            ? $input['yearLevel']
+            : ($existing['yearLevel'] ?? null);
+        $rawType = array_key_exists('studentType', $input)
+            ? $input['studentType']
+            : ($existing['studentType'] ?? 'Regular');
+        $yearLevel = normalizeUserYearLevel(
+            $rawYear === null || $rawYear === '' ? null : (string) $rawYear,
+            true
+        );
+        $studentType = normalizeStudentType(
+            $rawType === null || $rawType === '' ? 'Regular' : (string) $rawType,
+            true
+        );
+    }
+
+    return [
+        'employmentType' => $employmentType,
+        'yearLevel' => $yearLevel,
+        'studentType' => $studentType,
+    ];
+}
 /**
  * School / campus ID format: YYYY-NNN (e.g. 2020-001).
  * Unique per role only — Student and Faculty may share the same schoolId.
@@ -60,6 +166,15 @@ function assertSchoolIdAvailable(string $schoolId, string $role, ?string $exclud
  */
 function mapManagedUser(array $row): array
 {
+    $employmentType = $row['employmentType'] ?? null;
+    $employmentType = ($employmentType !== null && $employmentType !== '')
+        ? (string) $employmentType
+        : null;
+    $yearLevel = $row['yearLevel'] ?? null;
+    $yearLevel = ($yearLevel !== null && $yearLevel !== '') ? (string) $yearLevel : null;
+    $studentType = $row['studentType'] ?? null;
+    $studentType = ($studentType !== null && $studentType !== '') ? (string) $studentType : null;
+
     return [
         'uid' => (string) $row['uid'],
         'firstName' => (string) $row['firstName'],
@@ -72,6 +187,12 @@ function mapManagedUser(array $row): array
         'departmentName' => $row['departmentName'] !== null ? (string) $row['departmentName'] : null,
         'phoneNumber' => $row['phoneNumber'] !== null ? (string) $row['phoneNumber'] : null,
         'status' => (string) $row['status'],
+        'employmentType' => $employmentType,
+        'yearLevel' => $yearLevel,
+        'studentType' => $studentType,
+        'minLoad' => ((string) ($row['role'] ?? '') === 'Faculty')
+            ? facultyMinLoadForEmploymentType($employmentType)
+            : null,
         'createdAt' => (string) $row['createdAt'],
     ];
 }
@@ -91,9 +212,12 @@ function fetchManagedUserById(string $userId): ?array
                 u.departmentId,
                 u.phoneNumber,
                 u.status,
+                u.employmentType,
+                u.yearLevel,
+                u.studentType,
                 u.createdAt,
                 d.name AS departmentName
-            FROM `user` u
+            FROM userProfile u
             LEFT JOIN department d ON d.uid = u.departmentId
             WHERE u.uid = :uid
             LIMIT 1';
@@ -133,7 +257,7 @@ function fetchManagedUsers(
 
     $whereSql = implode(' AND ', $where);
 
-    $countStmt = db()->prepare("SELECT COUNT(*) FROM `user` u WHERE {$whereSql}");
+    $countStmt = db()->prepare("SELECT COUNT(*) FROM userProfile u WHERE {$whereSql}");
     $countStmt->execute($params);
     $total = (int) $countStmt->fetchColumn();
 
@@ -148,9 +272,12 @@ function fetchManagedUsers(
                 u.departmentId,
                 u.phoneNumber,
                 u.status,
+                u.employmentType,
+                u.yearLevel,
+                u.studentType,
                 u.createdAt,
                 d.name AS departmentName
-            FROM `user` u
+            FROM userProfile u
             LEFT JOIN department d ON d.uid = u.departmentId
             WHERE {$whereSql}
             ORDER BY u.schoolId ASC, u.lastName ASC, u.firstName ASC
@@ -197,6 +324,69 @@ function assertDepartmentIdOrNull(?string $departmentId): void
     }
 }
 
+function upsertFacultyProfile(string $userId, string $employmentType): void
+{
+    $stmt = db()->prepare(
+        'INSERT INTO faculty (userId, employmentType, createdAt)
+         VALUES (:uid, :employmentType, NOW())
+         ON DUPLICATE KEY UPDATE employmentType = VALUES(employmentType)'
+    );
+    $stmt->execute([
+        ':uid' => $userId,
+        ':employmentType' => $employmentType,
+    ]);
+}
+
+function upsertStudentProfile(string $userId, array $fields): void
+{
+    $exists = db()->prepare('SELECT userId FROM student WHERE userId = :uid LIMIT 1');
+    $exists->execute([':uid' => $userId]);
+    if ($exists->fetchColumn()) {
+        $stmt = db()->prepare(
+            'UPDATE student
+             SET yearLevel = :yearLevel, studentType = :studentType
+             WHERE userId = :uid'
+        );
+        $stmt->execute([
+            ':yearLevel' => $fields['yearLevel'],
+            ':studentType' => $fields['studentType'],
+            ':uid' => $userId,
+        ]);
+        return;
+    }
+
+    $stmt = db()->prepare(
+        'INSERT INTO student (userId, yearLevel, studentType, enrollmentEvalStatus, createdAt)
+         VALUES (:uid, :yearLevel, :studentType, \'Pending\', NOW())'
+    );
+    $stmt->execute([
+        ':uid' => $userId,
+        ':yearLevel' => $fields['yearLevel'],
+        ':studentType' => $fields['studentType'],
+    ]);
+}
+
+function syncUserSideProfiles(string $userId, string $role, array $roleFields): void
+{
+    if ($role === 'Faculty') {
+        db()->prepare('DELETE FROM student WHERE userId = :uid')->execute([':uid' => $userId]);
+        upsertFacultyProfile($userId, (string) $roleFields['employmentType']);
+        return;
+    }
+
+    if ($role === 'Student') {
+        db()->prepare('DELETE FROM faculty WHERE userId = :uid')->execute([':uid' => $userId]);
+        upsertStudentProfile($userId, [
+            'yearLevel' => (string) $roleFields['yearLevel'],
+            'studentType' => (string) $roleFields['studentType'],
+        ]);
+        return;
+    }
+
+    db()->prepare('DELETE FROM faculty WHERE userId = :uid')->execute([':uid' => $userId]);
+    db()->prepare('DELETE FROM student WHERE userId = :uid')->execute([':uid' => $userId]);
+}
+
 /**
  * @param array<string,mixed> $input
  * @return array<string,mixed>
@@ -229,6 +419,7 @@ function createManagedUser(array $input): array
     $departmentId = $departmentId === '' ? null : $departmentId;
     assertDepartmentIdOrNull($departmentId);
     assertSchoolIdAvailable($schoolId, $role);
+    $roleFields = normalizeRoleSpecificUserFields($role, $input, null);
 
     $exists = db()->prepare('SELECT uid FROM `user` WHERE email = :email LIMIT 1');
     $exists->execute([':email' => $email]);
@@ -239,13 +430,12 @@ function createManagedUser(array $input): array
     $uid = generateUid();
     $stmt = db()->prepare(
         'INSERT INTO `user`
-            (uid, departmentId, firstName, lastName, email, schoolId, role, phoneNumber, status, passwordHash, createdAt)
+            (uid, firstName, lastName, email, schoolId, role, phoneNumber, status, passwordHash, createdAt)
          VALUES
-            (:uid, :departmentId, :firstName, :lastName, :email, :schoolId, :role, :phoneNumber, :status, :passwordHash, NOW())'
+            (:uid, :firstName, :lastName, :email, :schoolId, :role, :phoneNumber, :status, :passwordHash, NOW())'
     );
     $stmt->execute([
         ':uid' => $uid,
-        ':departmentId' => $departmentId,
         ':firstName' => $firstName,
         ':lastName' => $lastName,
         ':email' => $email,
@@ -255,6 +445,8 @@ function createManagedUser(array $input): array
         ':status' => $status,
         ':passwordHash' => password_hash($password, PASSWORD_BCRYPT),
     ]);
+    setUserDepartment($uid, $departmentId);
+    syncUserSideProfiles($uid, $role, $roleFields);
 
     $user = fetchManagedUserById($uid);
     if ($user === null) {
@@ -313,6 +505,7 @@ function updateManagedUser(string $userId, array $input): array
     $departmentId = $departmentId === '' ? null : $departmentId;
     assertDepartmentIdOrNull($departmentId);
     assertSchoolIdAvailable($schoolId, $role, $userId);
+    $roleFields = normalizeRoleSpecificUserFields($role, $input, $existing);
 
     $exists = db()->prepare('SELECT uid FROM `user` WHERE email = :email AND uid <> :uid LIMIT 1');
     $exists->execute([':email' => $email, ':uid' => $userId]);
@@ -327,8 +520,7 @@ function updateManagedUser(string $userId, array $input): array
     if ($password !== '') {
         $stmt = db()->prepare(
             'UPDATE `user`
-             SET departmentId = :departmentId,
-                 firstName = :firstName,
+             SET firstName = :firstName,
                  lastName = :lastName,
                  email = :email,
                  schoolId = :schoolId,
@@ -339,7 +531,6 @@ function updateManagedUser(string $userId, array $input): array
              WHERE uid = :uid'
         );
         $stmt->execute([
-            ':departmentId' => $departmentId,
             ':firstName' => $firstName,
             ':lastName' => $lastName,
             ':email' => $email,
@@ -353,8 +544,7 @@ function updateManagedUser(string $userId, array $input): array
     } else {
         $stmt = db()->prepare(
             'UPDATE `user`
-             SET departmentId = :departmentId,
-                 firstName = :firstName,
+             SET firstName = :firstName,
                  lastName = :lastName,
                  email = :email,
                  schoolId = :schoolId,
@@ -364,7 +554,6 @@ function updateManagedUser(string $userId, array $input): array
              WHERE uid = :uid'
         );
         $stmt->execute([
-            ':departmentId' => $departmentId,
             ':firstName' => $firstName,
             ':lastName' => $lastName,
             ':email' => $email,
@@ -375,6 +564,8 @@ function updateManagedUser(string $userId, array $input): array
             ':uid' => $userId,
         ]);
     }
+    setUserDepartment($userId, $departmentId);
+    syncUserSideProfiles($userId, $role, $roleFields);
 
     // Soft-deactivated users should not keep a live API token.
     if ($status === USER_STATUS_INACTIVE) {

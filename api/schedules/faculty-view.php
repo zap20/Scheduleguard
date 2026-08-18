@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Dean view of faculty teaching schedules (confirmed + conflict).
+ * Dean view of faculty teaching schedules (draft + confirmed + conflict).
  * Filters: facultyId (or TBF), roomId.
  */
 
@@ -14,7 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     jsonError('Method not allowed.', 405);
 }
 
-requireRoles(['Dean']);
+requireRoles(['Dean', 'Checker', 'ProgramHead', 'HR']);
 
 $facultyId = isset($_GET['facultyId']) ? trim((string) $_GET['facultyId']) : '';
 $roomId = isset($_GET['roomId']) ? trim((string) $_GET['roomId']) : '';

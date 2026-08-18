@@ -50,11 +50,7 @@ try {
     }
     $result = generateScheduleOptions($input);
     if (($result['options'] ?? []) === []) {
-        jsonError(
-            'No conflict-free options: not enough free rooms for those subjects/days. '
-            . 'Free rooms or widen the day range.',
-            422
-        );
+        jsonError(diagnoseRoomAvailabilityByDay($input), 422);
     }
 } catch (InvalidArgumentException $e) {
     jsonError($e->getMessage(), 422);
